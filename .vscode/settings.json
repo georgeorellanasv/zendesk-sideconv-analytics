@@ -1,0 +1,18 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "python.terminal.activateEnvironment": true,
+  "editor.formatOnSave": true,
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "python.analysis.typeCheckingMode": "basic",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    ".venv": true
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "test_connection",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.test_connection",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "discover_fields",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.discover_fields",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "discover_views",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.discover_views",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "test_api_calls",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.test_api_calls",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "explore_side_conversations",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.explore_side_conversations",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "validate_classifier",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.validate_classifier",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "inspect_data",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.inspect_data",
+      "args": ["--ticket-id", "00000"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "preview_metrics",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "scripts.preview_metrics",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "extractor (last 7 days)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.extractor",
+      "args": ["--last-days", "7"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "extractor (dry-run 2 days)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.extractor",
+      "args": ["--last-days", "2", "--dry-run"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "dashboard (Streamlit)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "streamlit",
+      "args": ["run", "src/dashboard.py"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    }
+  ]
+}
