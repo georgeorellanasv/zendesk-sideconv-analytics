@@ -80,6 +80,25 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "chart_msgs_per_thread_dist":      {"en": "Messages per thread (distribution)", "es": "Mensajes por thread (distribución)"},
     "chart_msgs_per_thread_dist_help": {"en": "How many messages each thread contains. Longer threads indicate heavier back-and-forth.",
                                         "es": "Cuántos mensajes tiene cada thread. Los más largos indican más ping-pong."},
+
+    # ---------- Automation (Sprint 1a) ----------
+    "col_thread_is_automated":       {"en": "Thread Is Automated",    "es": "Thread Automatizado"},
+    "col_thread_automation_signal":  {"en": "Automation Signal",      "es": "Señal de Automatización"},
+    "m_pct_automated":               {"en": "% Automated threads",    "es": "% Threads Automatizados"},
+    "m_pct_automated_help":          {"en": "Percentage of threads heuristically classified as automated (created by triggers, mailboxes, or templates).",
+                                      "es": "Porcentaje de threads clasificados heurísticamente como automatizados (creados por triggers, buzones o templates)."},
+    "m_automated_manual_split":      {"en": "Automated vs Manual",    "es": "Automatizados vs Manuales"},
+    "m_automated_manual_split_help": {"en": "Breakdown of manual (human-initiated) vs automated (triggered) threads.",
+                                      "es": "Desglose de threads manuales (iniciados por humano) vs automatizados (por trigger)."},
+
+    # ---------- Reason history (Sprint 2) ----------
+    "col_ticket_reason_initial":      {"en": "Ticket Reason Initial",      "es": "Razón Inicial del Ticket"},
+    "col_ticket_reason_last":         {"en": "Ticket Reason Last",         "es": "Razón Última del Ticket"},
+    "col_ticket_reason_changes_count":{"en": "Ticket Reason Changes",      "es": "Cambios de Razón"},
+    "col_ticket_reason_history":      {"en": "Ticket Reason History",      "es": "Historial de Razón"},
+    "m_pct_tickets_reason_changed":       {"en": "Tickets with reason changed", "es": "Tickets con razón cambiada"},
+    "m_pct_tickets_reason_changed_help":  {"en": "Percentage of tickets whose Reason for Contact was changed at least once by the agent.",
+                                           "es": "Porcentaje de tickets cuya Razón de Contacto fue cambiada al menos una vez por el agente."},
     "title_database":          {"en": "Complete Database",                         "es": "Base de Datos Completa"},
     "caption_database":        {"en": "Tickets + Threads + Messages — ordered by Ticket ID", "es": "Tickets + Threads + Mensajes — ordenados por Ticket ID"},
     "title_concepts":          {"en": "Concepts & Data Dictionary",                "es": "Conceptos y Diccionario de Datos"},

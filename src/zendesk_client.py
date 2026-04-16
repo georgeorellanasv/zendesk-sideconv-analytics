@@ -7,6 +7,7 @@ Full version with rate limiting and all endpoints is built in Phase 2.
 
 import logging
 import time
+from collections import deque
 from typing import Any, Generator
 
 import requests
@@ -14,6 +15,15 @@ import requests
 from src.config import AUTH, BASE_URL, PROXIES, SSL_VERIFY, require_zendesk_credentials
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Rate limit guardrail
+# Zendesk Standard plan: 200 req/min. We cap at 180/min for a 10% safety buffer.
+# Any burst that would exceed this causes a sleep until the window slides.
+# ---------------------------------------------------------------------------
+
+RATE_LIMIT_WINDOW_SEC = 60
+RATE_LIMIT_MAX_CALLS = 180
 
 
 class ZendeskClient:
@@ -43,6 +53,33 @@ class ZendeskClient:
             logger.warning("SSL verification disabled (SSL_VERIFY=false)")
         self.session.verify = SSL_VERIFY
 
+        # Rate limit tracking — timestamps of recent calls
+        self._call_timestamps: deque[float] = deque()
+
+    def _enforce_rate_limit(self) -> None:
+        """
+        Client-side rate limit guardrail.
+
+        Ensures we never exceed RATE_LIMIT_MAX_CALLS in any RATE_LIMIT_WINDOW_SEC window.
+        If we're about to exceed, sleep until the oldest call falls out of the window.
+        """
+        now = time.time()
+        # Drop timestamps older than the window
+        while self._call_timestamps and now - self._call_timestamps[0] > RATE_LIMIT_WINDOW_SEC:
+            self._call_timestamps.popleft()
+
+        if len(self._call_timestamps) >= RATE_LIMIT_MAX_CALLS:
+            oldest = self._call_timestamps[0]
+            sleep_for = RATE_LIMIT_WINDOW_SEC - (now - oldest) + 0.2
+            if sleep_for > 0:
+                logger.info(
+                    "Rate limit guardrail: %d calls in last %ds — sleeping %.1fs",
+                    len(self._call_timestamps), RATE_LIMIT_WINDOW_SEC, sleep_for,
+                )
+                time.sleep(sleep_for)
+
+        self._call_timestamps.append(time.time())
+
     def _request(self, endpoint: str, params: dict | None = None) -> dict[str, Any]:
         """
         Perform a GET request with basic error handling.
@@ -51,6 +88,7 @@ class ZendeskClient:
         Returns the parsed JSON body.
         Raises requests.HTTPError on 4xx/5xx with a descriptive message.
         """
+        self._enforce_rate_limit()
         url = f"{BASE_URL}{endpoint}"
         try:
             response = self.session.get(url, params=params, timeout=30)
@@ -144,6 +182,33 @@ class ZendeskClient:
                 params = {}
             else:
                 endpoint = None
+
+    def get_ticket_audits(self, ticket_id: int) -> list[dict[str, Any]]:
+        """
+        GET /api/v2/tickets/{ticket_id}/audits.json (paginated)
+
+        Returns the chronological list of audit entries for a ticket. Each audit
+        contains an `events` array describing what changed (field updates,
+        triggers fired, automations, notifications, etc.).
+
+        Useful for reconstructing the history of custom field changes (e.g., how
+        the Reason for Contact field evolved over time).
+        """
+        audits: list[dict[str, Any]] = []
+        params: dict[str, Any] = {"per_page": 100}
+        endpoint = f"/api/v2/tickets/{ticket_id}/audits.json"
+
+        while endpoint:
+            data = self._request(endpoint, params)
+            audits.extend(data.get("audits", []))
+            next_page = data.get("next_page")
+            if next_page:
+                endpoint = next_page.replace(BASE_URL, "")
+                params = {}
+            else:
+                endpoint = None
+
+        return audits
 
     def get_side_conversations(self, ticket_id: int) -> list[dict[str, Any]]:
         """

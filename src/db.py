@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS tickets (
     group_id            INTEGER,
     assignee_id         INTEGER,
     reason_raw          TEXT,
+    reason_initial      TEXT,
+    reason_last         TEXT,
+    reason_changes_count INTEGER DEFAULT 0,
+    reason_history      TEXT,
     correspondent_raw   TEXT,
     country_raw         TEXT,
     product_raw         TEXT,
@@ -58,6 +62,8 @@ CREATE TABLE IF NOT EXISTS side_conversations (
     last_counterparty_reply_at  TEXT,
     resolution_hrs              REAL,
     total_exchanges             INTEGER,
+    sc_is_automated             INTEGER DEFAULT 0,
+    sc_automation_signal        TEXT,
     extracted_at                TEXT NOT NULL
 );
 

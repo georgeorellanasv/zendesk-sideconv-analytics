@@ -46,7 +46,9 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         SELECT
             ticket_id, subject, status, created_at, updated_at,
-            reason_raw, correspondent_raw, country_raw, product_raw,
+            reason_raw, reason_initial, reason_last,
+            reason_changes_count, reason_history,
+            correspondent_raw, country_raw, product_raw,
             side_conv_count
         FROM tickets
         """,
@@ -73,6 +75,8 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
             sc.last_counterparty_reply_at,
             sc.resolution_hrs,
             sc.total_exchanges,
+            sc.sc_is_automated,
+            sc.sc_automation_signal,
             t.reason_raw,
             t.correspondent_raw,
             t.status         AS ticket_status
@@ -116,6 +120,10 @@ def load_full_db() -> pd.DataFrame:
             t.created_at       AS ticket_created,
             t.updated_at       AS ticket_updated,
             t.reason_raw,
+            t.reason_initial,
+            t.reason_last,
+            t.reason_changes_count,
+            t.reason_history,
             t.correspondent_raw,
             t.country_raw,
             t.product_raw,
@@ -134,6 +142,8 @@ def load_full_db() -> pd.DataFrame:
             sc.last_counterparty_reply_at,
             sc.resolution_hrs,
             sc.total_exchanges,
+            sc.sc_is_automated,
+            sc.sc_automation_signal,
             e.event_id,
             e.event_sequence,
             e.event_type,
@@ -484,9 +494,21 @@ elif page == "nav_operational":
     c4.metric(t("m_p90", lang), f"{p90_resp:.1f} h", help=t("m_p90_help", lang))
     c5.metric(t("m_ghost", lang), f"{ghost:.0f}%", help=t("m_ghost_help", lang))
 
-    # ------------------- KPIs Row 2: Efficiency -------------------
-    c6, c7 = st.columns(2)
+    # ------------------- KPIs Row 2: Efficiency + Automation -------------------
+    c6, c7, c8 = st.columns(3)
     c6.metric(t("m_one_done", lang), f"{one_done:.0f}%", help=t("m_one_done_help", lang))
+
+    # % Automated threads
+    if "sc_is_automated" in df.columns and len(df):
+        pct_auto = (df["sc_is_automated"].fillna(0).astype(int) == 1).mean() * 100
+        n_auto = int((df["sc_is_automated"].fillna(0).astype(int) == 1).sum())
+        c7.metric(
+            t("m_pct_automated", lang),
+            f"{pct_auto:.0f}%",
+            f"{n_auto} / {len(df)}",
+            delta_color="off",
+            help=t("m_pct_automated_help", lang),
+        )
 
     # Weekday vs weekend
     if len(with_response) and "created_at" in with_response.columns:
@@ -495,15 +517,43 @@ elif page == "nav_operational":
         weekday_avg = wr.loc[wr["dayofweek"] < 5, "external_response_hrs"].mean()
         weekend_avg = wr.loc[wr["dayofweek"] >= 5, "external_response_hrs"].mean()
         delta_txt = f"{(weekend_avg - weekday_avg):+.1f} h"
-        c7.metric(
+        c8.metric(
             t("m_weekday_perf", lang),
-            f"{weekday_avg:.1f} h  ➜  {weekend_avg:.1f} h",
+            f"{weekday_avg:.1f} h  ->  {weekend_avg:.1f} h",
             delta=delta_txt,
             delta_color="inverse",
             help=t("m_weekday_perf_help", lang),
         )
 
     st.markdown("---")
+
+    # ------------------- Automated vs Manual breakdown -------------------
+    if "sc_automation_signal" in df.columns and df["sc_automation_signal"].notna().any():
+        st.subheader(t("m_automated_manual_split", lang), help=t("m_automated_manual_split_help", lang))
+        signal_counts = (
+            df["sc_automation_signal"].fillna("manual")
+            .value_counts().reset_index()
+        )
+        signal_counts.columns = ["signal", "count"]
+        color_map = {
+            "manual":               "#3498db",
+            "team_keyword_in_name": "#e67e22",
+            "mailbox_email":        "#e74c3c",
+            "rapid_creation":       "#9b59b6",
+            "numeric_prefix_name":  "#f39c12",
+            "compact_alias_name":   "#16a085",
+        }
+        fig_auto = px.bar(
+            signal_counts, x="signal", y="count",
+            color="signal", color_discrete_map=color_map,
+            labels={"signal": "", "count": "# threads"},
+        )
+        fig_auto.update_layout(
+            showlegend=False, height=300,
+            margin=dict(l=0, r=0, t=10, b=0),
+        )
+        st.plotly_chart(fig_auto, use_container_width=True)
+        st.markdown("---")
 
     # ------------------- Aging buckets -------------------
     st.subheader(t("m_aging", lang), help=t("m_aging_help", lang))
@@ -884,7 +934,10 @@ elif page == "nav_database":
         "ticket_id",
         "ticket_created",
         "ticket_status",
-        "reason_raw",
+        "reason_initial",
+        "reason_last",
+        "reason_changes_count",
+        "reason_history",
         "correspondent_raw",
         "country_raw",
         "ticket_subject",
@@ -894,6 +947,8 @@ elif page == "nav_database":
         "sc_created",
         "sc_direction",
         "sc_recipient_type",
+        "sc_is_automated",
+        "sc_automation_signal",
         "sc_reason_classification",
         "sc_reason_confidence",
         "external_reply_at",
@@ -917,21 +972,27 @@ elif page == "nav_database":
 
     rename_map = {
         # Ticket
-        "ticket_id":           t("col_ticket_num", lang),
-        "ticket_created":      t("col_ticket_opened", lang),
-        "ticket_status":       t("col_ticket_status", lang),
-        "reason_raw":          t("col_ticket_reason", lang),
-        "correspondent_raw":   t("col_ticket_correspondent", lang),
-        "country_raw":         t("col_ticket_country", lang),
-        "ticket_subject":      t("col_ticket_subject", lang),
+        "ticket_id":            t("col_ticket_num", lang),
+        "ticket_created":       t("col_ticket_opened", lang),
+        "ticket_status":        t("col_ticket_status", lang),
+        "reason_raw":           t("col_ticket_reason", lang),
+        "reason_initial":       t("col_ticket_reason_initial", lang),
+        "reason_last":          t("col_ticket_reason_last", lang),
+        "reason_changes_count": t("col_ticket_reason_changes_count", lang),
+        "reason_history":       t("col_ticket_reason_history", lang),
+        "correspondent_raw":    t("col_ticket_correspondent", lang),
+        "country_raw":          t("col_ticket_country", lang),
+        "ticket_subject":       t("col_ticket_subject", lang),
         # Thread
-        "sc_sequence":              t("col_thread_num", lang),
-        "sc_subject":               t("col_thread_subject", lang),
-        "sc_created":               t("col_thread_started", lang),
-        "sc_direction":             t("col_thread_direction", lang),
-        "sc_recipient_type":        t("col_thread_recipient_type", lang),
-        "sc_reason_classification": t("col_thread_classification", lang),
-        "sc_reason_confidence":     t("col_thread_confidence", lang),
+        "sc_sequence":                t("col_thread_num", lang),
+        "sc_subject":                 t("col_thread_subject", lang),
+        "sc_created":                 t("col_thread_started", lang),
+        "sc_direction":               t("col_thread_direction", lang),
+        "sc_recipient_type":          t("col_thread_recipient_type", lang),
+        "sc_is_automated":            t("col_thread_is_automated", lang),
+        "sc_automation_signal":       t("col_thread_automation_signal", lang),
+        "sc_reason_classification":   t("col_thread_classification", lang),
+        "sc_reason_confidence":       t("col_thread_confidence", lang),
         "external_reply_at":          t("col_thread_ext_reply", lang),
         "external_response_hrs":      t("col_thread_response_hrs", lang),
         "last_counterparty_reply_at": t("col_thread_last_cp_reply", lang),

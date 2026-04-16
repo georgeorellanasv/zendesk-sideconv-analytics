@@ -80,7 +80,11 @@ El primer mensaje de un thread siempre es de tipo `create` (quien lo inició). L
 | **Ticket #** | ID numérico único del ticket en Zendesk |
 | **Ticket Opened** | Fecha en que se abrió el ticket |
 | **Ticket Status** | Estado del ticket: `open`, `pending`, `hold`, `solved`, `closed` |
-| **Ticket Reason** | Razón que el agente seleccionó en el campo custom (ej: `order__cancellation`) |
+| **Ticket Reason** | Razón **actual** del ticket según el campo custom Zendesk (legacy, equivalente a `reason_last`) |
+| **Ticket Reason Initial** | Primer valor que tuvo el campo Reason cuando el ticket se creó (derivado de audits) |
+| **Ticket Reason Last** | Valor más reciente del campo Reason (derivado de audits) |
+| **Ticket Reason Changes** | Cuántas veces el agente cambió la razón del ticket |
+| **Ticket Reason History** | JSON con el timeline completo de cambios: `[{at, from, to}, ...]` |
 | **Ticket Correspondent** | Corresponsal principal del caso — el partner/banco que procesa la orden |
 | **Ticket Country** | País destino de la transacción |
 | **Ticket Subject** | Asunto original del ticket |
@@ -94,7 +98,9 @@ El primer mensaje de un thread siempre es de tipo `create` (quien lo inició). L
 | **Thread Started** | Cuándo se inició el thread |
 | **Thread Direction** | Hacia dónde va: `ria_to_client`, `ria_to_external`, `external_to_ria`, `internal` |
 | **Thread Recipient Type** | Categoría del destinatario: `client`, `correspondent`, `internal`, `unknown` |
-| **Thread Classification** | Razón derivada del subject (ej: `proof_of_payment_request`, `refund_request`) |
+| **Thread Is Automated** | 1 si el thread fue creado por trigger/buzón/template; 0 si fue manual (heurística) |
+| **Thread Automation Signal** | Qué señal disparó la clasificación: `manual`, `mailbox_email`, `team_keyword_in_name`, `rapid_creation`, `numeric_prefix_name`, `compact_alias_name` |
+| **Thread Classification** | Razón derivada del subject + body (ej: `proof_of_payment_request`, `refund_request`) |
 | **Thread Confidence** | Confianza de la clasificación: `high`, `medium`, `low` |
 | **Thread External Reply** | Timestamp en que la contraparte respondió **por primera vez** (primer acuso de recibo) |
 | **Thread Response (hrs)** | Horas que tardó la contraparte en dar la primera respuesta |
@@ -192,11 +198,78 @@ Clasificación que derivamos automáticamente del asunto del thread:
 | `modification_request` | Solicitud de modificación de datos |
 | `charge_issue` | Problema de cobro o doble cargo |
 | `compliance_inquiry` | Consulta de compliance (AML, KYC) |
-| `rfi_outbound` / `rfi_inbound` | Request for Information |
+| `rfi_identity_document` | Solicitud de documento de identidad (ID, pasaporte, cédula, licencia) |
+| `rfi_account_statement` | Solicitud de estado de cuenta bancario |
+| `rfi_missing_data` | Solicitud de datos faltantes (nombre completo, DOB, nacionalidad, etc.) |
+| `rfi_other` | Request for Information genérico (no cae en las 3 anteriores) |
+| `rfi_inbound` | Request for information **del corresponsal hacia Ria** |
 | `order_notification` | Notificación genérica de orden al cliente |
 | `general_correspondence` | Correspondencia general |
 | `internal_collaboration` | Coordinación entre equipos internos de Ria |
 | `other` | No matchea ninguna regla |
+
+---
+
+## 🤖 Detección de threads automatizados (heurística)
+
+Un thread puede ser **iniciado por un humano** (agente de Ria) o **auto-generado** (por un trigger/automation de Zendesk o un buzón compartido). Identificamos los automatizados usando 5 señales heurísticas (sin llamadas extras al API):
+
+| Señal | Qué detecta |
+|---|---|
+| `team_keyword_in_name` | El nombre del actor contiene "team", "agentes", "supervisors", "group", "department", etc. |
+| `numeric_prefix_name` | El nombre empieza con dígitos (ej: `421570 - Celeste J Llc`) |
+| `compact_alias_name` | Una sola palabra larga sin espacios (ej: `ARCanadateam`, `Agtransferenciaslam`) |
+| `mailbox_email` | La parte local del email es un buzón (ej: `team@...`, `ar@...`, `notifications@...`) |
+| `rapid_creation` | El thread se creó menos de 60 segundos después del ticket (imposible que un humano lo haga tan rápido) |
+| `manual` | Ninguna señal matchea — se considera manual |
+
+> ⚠️ **Limitación:** es una heurística, no 100% precisa. Para precisión perfecta habría que consultar el `audits` API (agrega calls extras). Para Abby esta heurística es suficiente.
+
+---
+
+## 📜 Historial del Reason del Ticket (audit-based)
+
+El campo **Reason for Contact** en Zendesk puede ser cambiado por el agente a medida que el caso avanza. Ejemplo:
+
+```
+Ticket creado:           reason = "order__transaction_status"
+Después de investigar:   reason = "order__proof_of_payment"
+Resolución final:        reason = "order__refund"
+```
+
+Reconstruimos este timeline consultando el endpoint `/api/v2/tickets/{id}/audits.json` y filtrando los cambios del campo custom correspondiente.
+
+**Columnas derivadas:**
+
+- `reason_initial` — primer valor cuando el ticket se creó
+- `reason_last` — valor actual (más reciente)
+- `reason_changes_count` — cuántas veces cambió
+- `reason_history` — JSON con timeline: `[{at, from, to}, ...]`
+
+**Ejemplo de reason_history:**
+```json
+[
+  {"at": "2026-04-10T10:00:00Z", "from": null, "to": "order__transaction_status"},
+  {"at": "2026-04-12T14:30:00Z", "from": "order__transaction_status", "to": "order__proof_of_payment"},
+  {"at": "2026-04-14T09:15:00Z", "from": "order__proof_of_payment", "to": "order__refund"}
+]
+```
+
+---
+
+## 🚦 Rate Limiting guardrail
+
+El pipeline llama al API de Zendesk varias veces. Para no exceder los límites:
+
+| Plan Zendesk | Límite |
+|---|---|
+| Standard | 200 req/min |
+| Professional | 400 req/min |
+| Enterprise | 700 req/min |
+
+El `ZendeskClient` implementa un **guardrail del lado cliente** que nunca excede **180 req/min** (10% buffer bajo el Standard). Si una ráfaga va a exceder, el código duerme lo necesario para deslizar la ventana.
+
+Esto garantiza que nunca recibamos `HTTP 429 Too Many Requests` y que podamos correr extractor + enricher en paralelo sin riesgo.
 """
 
 
@@ -277,7 +350,11 @@ The first message in a thread is always of type `create` (whoever started it). T
 | **Ticket #** | Unique numeric ID of the ticket in Zendesk |
 | **Ticket Opened** | Date the ticket was opened |
 | **Ticket Status** | Ticket state: `open`, `pending`, `hold`, `solved`, `closed` |
-| **Ticket Reason** | Reason selected by the agent in the custom field (e.g., `order__cancellation`) |
+| **Ticket Reason** | **Current** Reason value from the Zendesk custom field (legacy, equivalent to `reason_last`) |
+| **Ticket Reason Initial** | First value the Reason field had when the ticket was created (derived from audits) |
+| **Ticket Reason Last** | Most recent Reason value (derived from audits) |
+| **Ticket Reason Changes** | How many times the agent changed the ticket's Reason |
+| **Ticket Reason History** | JSON with the full timeline of changes: `[{at, from, to}, ...]` |
 | **Ticket Correspondent** | Main correspondent of the case — the partner/bank processing the order |
 | **Ticket Country** | Destination country of the transaction |
 | **Ticket Subject** | Original subject of the ticket |
@@ -291,7 +368,9 @@ The first message in a thread is always of type `create` (whoever started it). T
 | **Thread Started** | When the thread was started |
 | **Thread Direction** | Direction: `ria_to_client`, `ria_to_external`, `external_to_ria`, `internal` |
 | **Thread Recipient Type** | Recipient category: `client`, `correspondent`, `internal`, `unknown` |
-| **Thread Classification** | Reason derived from the subject (e.g., `proof_of_payment_request`, `refund_request`) |
+| **Thread Is Automated** | 1 if the thread was created by a trigger/mailbox/template; 0 if manual (heuristic) |
+| **Thread Automation Signal** | Which signal triggered the classification: `manual`, `mailbox_email`, `team_keyword_in_name`, `rapid_creation`, `numeric_prefix_name`, `compact_alias_name` |
+| **Thread Classification** | Reason derived from subject + body (e.g., `proof_of_payment_request`, `refund_request`) |
 | **Thread Confidence** | Classification confidence: `high`, `medium`, `low` |
 | **Thread External Reply** | Timestamp when the counterparty replied for the **first time** (first acknowledgment) |
 | **Thread Response (hrs)** | Hours the counterparty took to provide the first response |
@@ -389,9 +468,76 @@ Categories we automatically derive from the thread subject:
 | `modification_request` | Data modification request |
 | `charge_issue` | Charge problem or double charge |
 | `compliance_inquiry` | Compliance inquiry (AML, KYC) |
-| `rfi_outbound` / `rfi_inbound` | Request for Information |
+| `rfi_identity_document` | Request for identity document (ID, passport, license, etc.) |
+| `rfi_account_statement` | Request for bank/account statement |
+| `rfi_missing_data` | Request for missing data (full name, DOB, nationality, etc.) |
+| `rfi_other` | Generic Request for Information (doesn't fit the 3 above) |
+| `rfi_inbound` | Request for information **from correspondent to Ria** |
 | `order_notification` | Generic order notification to customer |
 | `general_correspondence` | General correspondence |
 | `internal_collaboration` | Coordination between internal Ria teams |
 | `other` | Does not match any rule |
+
+---
+
+## 🤖 Automated thread detection (heuristic)
+
+A thread can be **human-initiated** (by a Ria agent) or **auto-generated** (by a Zendesk trigger/automation or a shared mailbox). We identify automated ones using 5 heuristic signals (no extra API calls):
+
+| Signal | What it detects |
+|---|---|
+| `team_keyword_in_name` | Actor name contains "team", "supervisors", "group", "department", etc. |
+| `numeric_prefix_name` | Name starts with digits (e.g., `421570 - Celeste J Llc`) |
+| `compact_alias_name` | Single long word no spaces (e.g., `ARCanadateam`, `Agtransferenciaslam`) |
+| `mailbox_email` | Email local part is a mailbox alias (e.g., `team@...`, `ar@...`, `notifications@...`) |
+| `rapid_creation` | Thread created less than 60 seconds after the ticket (impossible for a human to be that fast) |
+| `manual` | No signal matched — treated as manual |
+
+> ⚠️ **Limitation:** it's a heuristic, not 100% accurate. For perfect precision you'd query the `audits` API (adds extra calls). For Abby's use case this heuristic is sufficient.
+
+---
+
+## 📜 Ticket Reason history (audit-based)
+
+The **Reason for Contact** field in Zendesk can be changed by the agent as the case evolves. Example:
+
+```
+Ticket created:           reason = "order__transaction_status"
+After investigating:      reason = "order__proof_of_payment"
+Final resolution:         reason = "order__refund"
+```
+
+We reconstruct this timeline by querying the `/api/v2/tickets/{id}/audits.json` endpoint and filtering changes to the relevant custom field.
+
+**Derived columns:**
+
+- `reason_initial` — first value when the ticket was created
+- `reason_last` — current (most recent) value
+- `reason_changes_count` — how many times it changed
+- `reason_history` — JSON timeline: `[{at, from, to}, ...]`
+
+**Example of reason_history:**
+```json
+[
+  {"at": "2026-04-10T10:00:00Z", "from": null, "to": "order__transaction_status"},
+  {"at": "2026-04-12T14:30:00Z", "from": "order__transaction_status", "to": "order__proof_of_payment"},
+  {"at": "2026-04-14T09:15:00Z", "from": "order__proof_of_payment", "to": "order__refund"}
+]
+```
+
+---
+
+## 🚦 Rate Limiting guardrail
+
+The pipeline makes multiple Zendesk API calls. To stay within limits:
+
+| Zendesk Plan | Limit |
+|---|---|
+| Standard | 200 req/min |
+| Professional | 400 req/min |
+| Enterprise | 700 req/min |
+
+The `ZendeskClient` implements a **client-side guardrail** that never exceeds **180 req/min** (10% buffer under Standard). If a burst would exceed, the code sleeps enough to slide the window.
+
+This ensures we never get `HTTP 429 Too Many Requests` and can safely run extractor + enricher without risk.
 """

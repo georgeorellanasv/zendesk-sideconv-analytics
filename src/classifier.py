@@ -320,22 +320,75 @@ _RULES: list[tuple[str, str, list[str]]] = [
             r"\bkyc\b",
         ],
     ),
+    # ---- RFI FAMILY (orden importa: específicas primero, catch-all al final) ----
     (
-        "rfi_outbound",
+        "rfi_identity_document",
+        "high",
+        [
+            r"copy\s+of\s+(your|the)?\s*id\b",
+            r"copia\s+de\s+(tu|su|la)?\s*(id|identificaci[oó]n|c[eé]dula|pasaporte)",
+            r"foto\s+de\s+(tu|su|la)?\s*(id|identificaci[oó]n|c[eé]dula|pasaporte)",
+            r"send\s+us.*(id|passport|identification)",
+            r"env[ií]a(nos|r).*(id|identificaci[oó]n|c[eé]dula|pasaporte)",
+            r"proof\s+of\s+identity",
+            r"adjuntar\s+(tu|su|la)?\s*(id|identificaci[oó]n|c[eé]dula|pasaporte)",
+            r"scan.*(id|passport)",
+            r"id\s+del\s+beneficiario",      # ID = documento identidad del beneficiario
+            r"id\s+del\s+cliente",
+            r"driver'?s?\s+licen[sc]e",
+            r"licencia\s+de\s+conducir",
+            r"\bpassport\b",
+            r"\bpasaporte\b",
+        ],
+    ),
+    (
+        "rfi_account_statement",
+        "high",
+        [
+            r"bank\s+statement",
+            r"account\s+statement",
+            r"estado\s+de\s+cuenta",
+            r"statement\s+request",
+            r"adjuntar\s+estado\s+(de\s+)?cuenta",
+            r"favor\s+enviar\s+estado",
+            r"historial\s+(de\s+)?transacciones",
+            r"transaction\s+history",
+            r"estado\s+bancario",
+        ],
+    ),
+    (
+        "rfi_missing_data",
+        "high",
+        [
+            r"please\s+provide\s+(full\s+name|the\s+following|additional|beneficiary)",
+            r"favor\s+(enviar|proveer|proporcionar)\s+(los\s+siguientes?|nombre\s+completo|fecha\s+de\s+nacimiento)",
+            r"beneficiary\s+(lastname|middlename|firstname|nationality|country|dob)",
+            r"full\s+name\s+till",
+            r"fecha\s+de\s+nacimiento",
+            r"date\s+of\s+birth\b",
+            r"\bdob\b",
+            r"routing\s+number",
+            r"account\s+number",
+            r"n[uú]mero\s+de\s+cuenta",
+            r"banking\s+details",
+            r"datos\s+bancarios",
+            r"informaci[oó]n\s+del\s+beneficiario",
+            r"beneficiary\s+(details|information|info)",
+        ],
+    ),
+    (
+        "rfi_other",
         "medium",
         [
             r"\brfi\b",
             r"request\s+for\s+information",
-            r"statement\s+request",
-            r"id\s+del\s+beneficiario",
-            r"bank\s+statement",
-            r"estado\s+de\s+cuenta",
             r"additional\s+information",
             r"informaci[oó]n\s+adicional",
-            r"adjuntar\s+estado",
-            r"favor\s+enviar\s+estado",
             r"favor\s+enviar.*comprobante",
             r"requested\s+the\s+following",
+            r"please\s+provide",
+            r"favor\s+enviar",
+            r"por\s+favor\s+env[ií]e",
         ],
     ),
     (
@@ -383,6 +436,99 @@ def classify_reason(subject: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Automation heuristic — detect if a side conversation was auto-generated
+# ---------------------------------------------------------------------------
+
+# Keywords en actor_name que típicamente son buzones/equipos (no personas)
+_TEAM_KEYWORDS = (
+    "team", "teams", "supervisors", "supervisor", "agentes", "agents",
+    "group", "dept", "department", "division", "office", "support",
+    "desk", "service", "center", "mailbox",
+)
+
+# Emails típicos de buzón automatizado
+_MAILBOX_LOCAL_KEYWORDS = (
+    "team", "agentes", "agents", "group", "noreply", "no-reply",
+    "notifications", "notification", "support", "ar", "receivables",
+    "settlement", "settlements",
+)
+
+
+def _looks_like_team_name(name: str) -> bool:
+    """Nombre tiene keyword de equipo/buzón."""
+    lower = (name or "").strip().lower()
+    if not lower:
+        return False
+    return any(kw in lower for kw in _TEAM_KEYWORDS)
+
+
+def _has_numeric_prefix(name: str) -> bool:
+    """Nombre empieza con dígitos (ej: '421570 - Celeste J Llc')."""
+    stripped = (name or "").strip()
+    return bool(re.match(r"^\d{3,}\s*[-:]", stripped))
+
+
+def _is_compact_alias(name: str) -> bool:
+    """Una sola palabra larga sin espacios (ej: 'ARCanadateam', 'Agtransferenciaslam')."""
+    stripped = (name or "").strip()
+    if " " in stripped:
+        return False
+    # Al menos 8 chars, mezcla de mayúsculas y minúsculas, no es una persona normal
+    return len(stripped) >= 8 and any(c.isupper() for c in stripped) and any(c.islower() for c in stripped)
+
+
+def _is_mailbox_email(email: str) -> bool:
+    """Parte local del email coincide con keyword de mailbox."""
+    local = (email or "").strip().lower().split("@", 1)[0]
+    if not local:
+        return False
+    return any(kw in local for kw in _MAILBOX_LOCAL_KEYWORDS)
+
+
+def detect_automation(
+    actor_name: str,
+    actor_email: str,
+    sc_created_at: str | None,
+    ticket_created_at: str | None,
+) -> tuple[int, str]:
+    """
+    Heuristically detect if a side conversation was auto-generated.
+
+    Returns (is_automated: int (0/1), signal: str).
+    Signal tells which rule triggered — useful for auditing the heuristic.
+    """
+    # Signal 1: team/mailbox keyword in actor_name
+    if _looks_like_team_name(actor_name):
+        return 1, "team_keyword_in_name"
+
+    # Signal 2: numeric prefix (like "421570 - Celeste J Llc")
+    if _has_numeric_prefix(actor_name):
+        return 1, "numeric_prefix_name"
+
+    # Signal 3: compact alias (ARCanadateam, Agtransferenciaslam)
+    if _is_compact_alias(actor_name):
+        return 1, "compact_alias_name"
+
+    # Signal 4: mailbox-style email
+    if _is_mailbox_email(actor_email):
+        return 1, "mailbox_email"
+
+    # Signal 5: thread created within 60 seconds of the ticket
+    if sc_created_at and ticket_created_at:
+        try:
+            from datetime import datetime
+            dt_sc = datetime.fromisoformat(sc_created_at.replace("Z", "+00:00"))
+            dt_tkt = datetime.fromisoformat(ticket_created_at.replace("Z", "+00:00"))
+            delta = (dt_sc - dt_tkt).total_seconds()
+            if 0 <= delta < 60:
+                return 1, "rapid_creation"
+        except (ValueError, TypeError):
+            pass
+
+    return 0, "manual"
+
+
+# ---------------------------------------------------------------------------
 # Main — update side_conversations table
 # ---------------------------------------------------------------------------
 
@@ -401,10 +547,15 @@ def run_classification() -> None:
             SELECT
                 sc.side_conv_id,
                 sc.subject,
+                sc.created_at       AS sc_created_at,
+                t.created_at        AS ticket_created_at,
                 e.from_address,
                 e.to_addresses,
-                e.message_body
+                e.message_body,
+                e.actor_name,
+                e.actor_email
             FROM side_conversations sc
+            JOIN tickets t ON t.ticket_id = sc.ticket_id
             LEFT JOIN side_conversation_events e
                 ON  e.side_conv_id = sc.side_conv_id
                 AND e.event_type   = 'create'
@@ -414,17 +565,22 @@ def run_classification() -> None:
     logger.info("Side conversations a clasificar: %d", len(rows))
 
     counts: dict[str, int] = {}
-    updates: list[tuple[str, str, str, str, str]] = []
+    automation_counts: dict[str, int] = {}
+    updates: list[tuple[str, str, str, str, int, str, str]] = []
 
     # Categorías "catch-all" — si el subject matchea estas, también probamos con el body
     GENERIC_LABELS = {"other", "order_notification", "general_correspondence"}
 
     for row in rows:
-        sc_id       = row["side_conv_id"]
-        subject     = row["subject"] or ""
-        from_addr   = row["from_address"] or ""
-        to_addr_raw = row["to_addresses"] or ""
-        body        = (row["message_body"] or "")[:500]  # primeros 500 chars
+        sc_id             = row["side_conv_id"]
+        subject           = row["subject"] or ""
+        sc_created        = row["sc_created_at"]
+        ticket_created    = row["ticket_created_at"]
+        from_addr         = row["from_address"] or ""
+        to_addr_raw       = row["to_addresses"] or ""
+        body              = (row["message_body"] or "")[:500]
+        actor_name        = row["actor_name"] or ""
+        actor_email       = row["actor_email"] or ""
 
         to_emails      = _emails_from_to(to_addr_raw)
         recipient_type = classify_recipient_type(to_emails)
@@ -440,14 +596,22 @@ def run_classification() -> None:
             if reason in GENERIC_LABELS and body:
                 body_reason, body_conf = classify_reason(body)
                 if body_reason not in GENERIC_LABELS:
-                    # Degradamos confianza (viene del body, no del subject)
                     downgrade = {"high": "medium", "medium": "low", "low": "low"}
                     reason = body_reason
                     confidence = downgrade.get(body_conf, "low")
 
-        updates.append((direction, recipient_type, reason, confidence, sc_id))
+        # Automation heuristic
+        is_automated, automation_signal = detect_automation(
+            actor_name, actor_email, sc_created, ticket_created
+        )
+
+        updates.append(
+            (direction, recipient_type, reason, confidence,
+             is_automated, automation_signal, sc_id)
+        )
         key = f"{direction}/{recipient_type}/{reason}"
         counts[key] = counts.get(key, 0) + 1
+        automation_counts[automation_signal] = automation_counts.get(automation_signal, 0) + 1
 
     with get_conn() as conn:
         conn.executemany(
@@ -456,15 +620,21 @@ def run_classification() -> None:
             SET sc_direction             = ?,
                 sc_recipient_type        = ?,
                 sc_reason_classification = ?,
-                sc_reason_confidence     = ?
+                sc_reason_confidence     = ?,
+                sc_is_automated          = ?,
+                sc_automation_signal     = ?
             WHERE side_conv_id = ?
             """,
             updates,
         )
 
-    logger.info("Clasificación completada. Distribución:")
+    logger.info("Clasificación completada. Distribución (reason):")
     for key, n in sorted(counts.items(), key=lambda x: -x[1]):
         logger.info("  %-65s %d", key, n)
+
+    logger.info("Distribución de señales de automatización:")
+    for key, n in sorted(automation_counts.items(), key=lambda x: -x[1]):
+        logger.info("  %-30s %d", key, n)
 
 
 if __name__ == "__main__":
