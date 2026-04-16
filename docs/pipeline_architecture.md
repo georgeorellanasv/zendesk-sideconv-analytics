@@ -15,6 +15,27 @@ Todo corre **localmente** (PC + SQLite). La DB anonimizada se comparte en GitHub
 
 ---
 
+## 🔎 SCOPE — Solo tickets con estatus `solved`
+
+**Decisión estratégica (definida con Abby, Franky, Ernesto en la revisión de 2026-04-16):**
+
+El análisis se concentra **exclusivamente en tickets con `status = solved`**. Razón:
+
+- Un ticket `solved` representa un **caso completo** con toda su historia: apertura, investigación, intercambios, resolución
+- Tickets en estado `open`/`pending`/`hold` son historias **incompletas** (aún no sabemos cómo terminan)
+- Al analizar solo `solved` vemos **patrones reales de resolución**: cuánto tardó realmente, qué rutas se siguieron, qué reason pivots ocurrieron
+
+### Implementación en 2 niveles
+
+| Nivel | Dónde | Cómo |
+|---|---|---|
+| **Dashboard** | Filtro sidebar con default `solved` | Usuario puede cambiar temporalmente a otro estatus, pero por default ve análisis de casos cerrados |
+| **Extractor (futuro)** | Vista Zendesk o Search API | La vista US Care actual tiene `status < solved` (excluye solved). Al regenerar token hay que usar: una vista nueva `"US Care - Solved (last N days)"` **o** Search API: `status:solved group:4415490553361` |
+
+> ⚠️ **Pendiente de implementación:** hasta que el token Zendesk se regenere, la DB contiene tickets no-solved (del scope anterior). El filtro del dashboard respeta la decisión, mostrando 0 tickets si filtramos por solved hasta que re-extraigamos.
+
+---
+
 ## 📐 Stack tecnológico
 
 | Capa | Tecnología | Por qué |

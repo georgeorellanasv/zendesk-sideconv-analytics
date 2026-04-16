@@ -23,6 +23,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "thread_direction":   {"en": "Thread Direction",     "es": "Dirección del Thread"},
     "recipient_type":     {"en": "Recipient Type",       "es": "Tipo de Destinatario"},
     "classification":     {"en": "Classification",       "es": "Clasificación"},
+    "ticket_status_filter":{"en": "Ticket Status",        "es": "Estado del Ticket"},
     "all":                {"en": "All",                  "es": "Todos"},
 
     # ---------- KPIs ----------
@@ -126,6 +127,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "col_ticket_correspondent": {"en": "Ticket Correspondent",  "es": "Corresponsal del Ticket"},
     "col_ticket_country":       {"en": "Ticket Country",        "es": "País del Ticket"},
     "col_ticket_subject":       {"en": "Ticket Subject",        "es": "Asunto del Ticket"},
+    "col_ticket_updated":       {"en": "Ticket Updated",        "es": "Ticket Actualizado"},
+    "col_ticket_product":       {"en": "Ticket Product",        "es": "Producto del Ticket"},
+    "col_ticket_side_conv_count":{"en": "Ticket Thread Count",   "es": "Total Threads del Ticket"},
+    "col_msg_actor_email":      {"en": "Msg Actor Email",       "es": "Email del Remitente"},
 
     "col_thread_num":            {"en": "Thread #",              "es": "Thread #"},
     "col_thread_subject":        {"en": "Thread Subject",        "es": "Asunto del Thread"},

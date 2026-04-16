@@ -149,7 +149,7 @@ def load_full_db() -> pd.DataFrame:
             e.event_type,
             e.created_at       AS event_created,
             e.actor_name,
-            e.actor_email,
+            e.actor_email      AS msg_actor_email,
             e.from_address,
             e.to_addresses,
             e.message_subject,
@@ -215,6 +215,17 @@ sel_recipient = st.sidebar.selectbox(t("recipient_type", lang), recipient_opts)
 reason_opts = [ALL] + sorted(sc_df["sc_reason_classification"].unique().tolist())
 sel_reason = st.sidebar.selectbox(t("classification", lang), reason_opts)
 
+# Ticket status filter — default Solved only (analysis scope per stakeholders)
+status_opts = [ALL] + sorted(
+    sc_df["ticket_status"].dropna().unique().tolist()
+)
+_default_status = "solved" if "solved" in status_opts else ALL
+sel_status = st.sidebar.selectbox(
+    t("ticket_status_filter", lang),
+    status_opts,
+    index=status_opts.index(_default_status),
+)
+
 st.sidebar.markdown("---")
 st.sidebar.caption(
     f"DB: `{DB_PATH.name}`  \n"
@@ -229,6 +240,8 @@ if sel_recipient != ALL:
     filtered = filtered[filtered["sc_recipient_type"] == sel_recipient]
 if sel_reason != ALL:
     filtered = filtered[filtered["sc_reason_classification"] == sel_reason]
+if sel_status != ALL:
+    filtered = filtered[filtered["ticket_status"] == sel_status]
 
 
 # =========================================================================
@@ -904,6 +917,8 @@ elif page == "nav_database":
         db_filtered = db_filtered[
             db_filtered["sc_reason_classification"] == sel_reason
         ]
+    if sel_status != ALL:
+        db_filtered = db_filtered[db_filtered["ticket_status"] == sel_status]
 
     # Búsqueda por ticket ID
     search_ticket = st.text_input(
@@ -929,43 +944,50 @@ elif page == "nav_database":
 
     # Vista jerárquica: Ticket → Side Conv → Eventos
     # Orden narrativo: TICKET -> CONVERSACIÓN -> MENSAJE
+    # (identidad -> qué -> estado -> contexto -> métricas -> detalle)
     display_db_cols = [
-        # --- TICKET (contexto estático) ---
-        "ticket_id",
-        "ticket_created",
-        "ticket_status",
-        "reason_initial",
-        "reason_last",
-        "reason_changes_count",
-        "reason_history",
-        "correspondent_raw",
-        "country_raw",
-        "ticket_subject",
-        # --- SIDE CONVERSATION (la conversación) ---
-        "sc_sequence",
-        "sc_subject",
-        "sc_created",
-        "sc_direction",
-        "sc_recipient_type",
-        "sc_is_automated",
-        "sc_automation_signal",
-        "sc_reason_classification",
-        "sc_reason_confidence",
-        "external_reply_at",
-        "external_response_hrs",
-        "last_counterparty_reply_at",
-        "resolution_hrs",
-        "total_exchanges",
-        "sc_state",
-        # --- MENSAJE (cada intercambio) ---
-        "event_sequence",
-        "event_type",
-        "event_created",
-        "actor_name",
-        "from_address",
-        "to_addresses",
-        "message_subject",
-        "message_body",
+        # --- TICKET (contexto estático del caso) ---
+        "ticket_id",              # WHO — identidad
+        "ticket_subject",         # WHAT — titular
+        "ticket_created",         # WHEN — abierto
+        "ticket_updated",         # WHEN — última actualización
+        "ticket_status",          # STATE
+        "correspondent_raw",      # PARTNER principal
+        "country_raw",            # WHERE — país destino
+        "product_raw",            # PRODUCT
+        "side_conv_count",        # SUMMARY — cuántos threads
+        "reason_initial",         # REASON: empezó como
+        "reason_last",            # REASON: actual
+        "reason_changes_count",   # REASON: # pivots
+        "reason_history",         # REASON: detalle completo (JSON al final)
+
+        # --- THREAD (la conversación) ---
+        "sc_sequence",            # WHICH # — identidad
+        "sc_subject",             # WHAT
+        "sc_state",               # STATE (mirror de ticket_status)
+        "sc_created",             # WHEN started
+        "sc_direction",           # WHERE it goes
+        "sc_recipient_type",      # TO WHOM (categoría)
+        "sc_is_automated",        # AUTO or HUMAN
+        "sc_automation_signal",   # señal específica
+        "sc_reason_classification",  # WHY (propósito)
+        "sc_reason_confidence",   # classification quality
+        "total_exchanges",        # SUMMARY — cuántos msgs
+        "external_reply_at",      # 1er reply timestamp
+        "external_response_hrs",  # 1er reply time
+        "last_counterparty_reply_at",  # último reply ts
+        "resolution_hrs",         # total resolution time
+
+        # --- MSG (cada intercambio individual) ---
+        "event_sequence",         # # del mensaje
+        "event_type",             # create/reply
+        "event_created",          # WHEN
+        "actor_name",             # WHO (display)
+        "msg_actor_email",        # WHO (email)
+        "from_address",           # FROM
+        "to_addresses",           # TO
+        "message_subject",        # subject
+        "message_body",           # body
     ]
 
     display_db_cols = [c for c in display_db_cols if c in db_filtered.columns]
@@ -973,16 +995,19 @@ elif page == "nav_database":
     rename_map = {
         # Ticket
         "ticket_id":            t("col_ticket_num", lang),
+        "ticket_subject":       t("col_ticket_subject", lang),
         "ticket_created":       t("col_ticket_opened", lang),
+        "ticket_updated":       t("col_ticket_updated", lang),
         "ticket_status":        t("col_ticket_status", lang),
+        "correspondent_raw":    t("col_ticket_correspondent", lang),
+        "country_raw":          t("col_ticket_country", lang),
+        "product_raw":          t("col_ticket_product", lang),
+        "side_conv_count":      t("col_ticket_side_conv_count", lang),
         "reason_raw":           t("col_ticket_reason", lang),
         "reason_initial":       t("col_ticket_reason_initial", lang),
         "reason_last":          t("col_ticket_reason_last", lang),
         "reason_changes_count": t("col_ticket_reason_changes_count", lang),
         "reason_history":       t("col_ticket_reason_history", lang),
-        "correspondent_raw":    t("col_ticket_correspondent", lang),
-        "country_raw":          t("col_ticket_country", lang),
-        "ticket_subject":       t("col_ticket_subject", lang),
         # Thread
         "sc_sequence":                t("col_thread_num", lang),
         "sc_subject":                 t("col_thread_subject", lang),
@@ -1000,14 +1025,15 @@ elif page == "nav_database":
         "total_exchanges":            t("col_thread_exchanges", lang),
         "sc_state":                   t("col_thread_state", lang),
         # Message
-        "event_sequence":  t("col_msg_num", lang),
-        "event_type":      t("col_msg_type", lang),
-        "event_created":   t("col_msg_date", lang),
-        "actor_name":      t("col_msg_actor", lang),
-        "from_address":    t("col_msg_from", lang),
-        "to_addresses":    t("col_msg_to", lang),
-        "message_subject": t("col_msg_subject", lang),
-        "message_body":    t("col_msg_body", lang),
+        "event_sequence":    t("col_msg_num", lang),
+        "event_type":        t("col_msg_type", lang),
+        "event_created":     t("col_msg_date", lang),
+        "actor_name":        t("col_msg_actor", lang),
+        "msg_actor_email":   t("col_msg_actor_email", lang),
+        "from_address":      t("col_msg_from", lang),
+        "to_addresses":      t("col_msg_to", lang),
+        "message_subject":   t("col_msg_subject", lang),
+        "message_body":      t("col_msg_body", lang),
     }
 
     st.dataframe(
