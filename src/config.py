@@ -15,21 +15,29 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 
-def _require(var: str) -> str:
-    """Return env var value or raise with a helpful message."""
-    value = os.getenv(var, "").strip()
-    if not value:
+# --- Credentials (only needed by the extractor / discovery scripts) ---
+# Not required for the dashboard, which only reads the local DB.
+# The ZendeskClient will raise a clear error if credentials are missing when
+# an API call is actually attempted.
+ZENDESK_SUBDOMAIN: str = os.getenv("ZENDESK_SUBDOMAIN", "").strip()
+ZENDESK_EMAIL: str    = os.getenv("ZENDESK_EMAIL", "").strip()
+ZENDESK_TOKEN: str    = os.getenv("ZENDESK_TOKEN", "").strip()
+
+
+def require_zendesk_credentials() -> None:
+    """Raise if Zendesk credentials are missing. Call this from the extractor only."""
+    missing = [
+        name for name, val in {
+            "ZENDESK_SUBDOMAIN": ZENDESK_SUBDOMAIN,
+            "ZENDESK_EMAIL":     ZENDESK_EMAIL,
+            "ZENDESK_TOKEN":     ZENDESK_TOKEN,
+        }.items() if not val
+    ]
+    if missing:
         raise EnvironmentError(
-            f"Missing required environment variable: {var}\n"
-            f"Copy .env.example to .env and fill in your credentials."
+            "Missing required environment variables: " + ", ".join(missing)
+            + "\nCopy .env.example to .env and fill in your credentials."
         )
-    return value
-
-
-# --- Required credentials ---
-ZENDESK_SUBDOMAIN: str = _require("ZENDESK_SUBDOMAIN")
-ZENDESK_EMAIL: str = _require("ZENDESK_EMAIL")
-ZENDESK_TOKEN: str = _require("ZENDESK_TOKEN")
 
 # --- Derived constants ---
 BASE_URL: str = f"https://{ZENDESK_SUBDOMAIN}.zendesk.com"
@@ -49,6 +57,9 @@ VIEW_ID_US_CARE: str = os.getenv("VIEW_ID_US_CARE", "")
 HTTP_PROXY: str = os.getenv("HTTP_PROXY", "")
 HTTPS_PROXY: str = os.getenv("HTTPS_PROXY", "")
 
+# --- SSL (set to "false" in corporate environments with SSL inspection) ---
+SSL_VERIFY: bool | str = os.getenv("SSL_VERIFY", "true").lower() != "false"
+
 PROXIES: dict[str, str] | None = (
     {"http": HTTP_PROXY, "https": HTTPS_PROXY}
     if HTTP_PROXY or HTTPS_PROXY
@@ -56,7 +67,19 @@ PROXIES: dict[str, str] | None = (
 )
 
 # --- Paths ---
-DB_PATH: Path = PROJECT_ROOT / "data" / "sideconv.db"
+# Use the real DB if present, otherwise fall back to the demo (anonymized) DB.
+# Override with SIDECONV_DB env var if needed.
+_DEFAULT_DB = PROJECT_ROOT / "data" / "sideconv.db"
+_DEMO_DB    = PROJECT_ROOT / "data" / "sideconv_demo.db"
+_DB_OVERRIDE = os.getenv("SIDECONV_DB", "").strip()
+
+if _DB_OVERRIDE:
+    DB_PATH: Path = Path(_DB_OVERRIDE)
+elif _DEFAULT_DB.exists():
+    DB_PATH = _DEFAULT_DB
+else:
+    DB_PATH = _DEMO_DB
+
 LOG_PATH: Path = PROJECT_ROOT / "logs" / "extractor.log"
 REPORTS_DIR: Path = PROJECT_ROOT / "reports"
 

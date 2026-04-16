@@ -2,9 +2,12 @@
 .venv/
 __pycache__/
 *.pyc
-data/
 logs/
 reports/
-*.db
 .pytest_cache/
 .ruff_cache/
+
+# Data: ignore all DB files but allow the demo (anonymized) one
+data/*
+!data/.gitkeep
+!data/sideconv_demo.db

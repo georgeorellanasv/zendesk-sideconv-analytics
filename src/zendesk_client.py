@@ -11,7 +11,7 @@ from typing import Any, Generator
 
 import requests
 
-from src.config import AUTH, BASE_URL, PROXIES
+from src.config import AUTH, BASE_URL, PROXIES, SSL_VERIFY, require_zendesk_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class ZendeskClient:
     """
 
     def __init__(self) -> None:
+        require_zendesk_credentials()
         self.session = requests.Session()
         self.session.auth = AUTH
         self.session.headers.update(
@@ -36,6 +37,11 @@ class ZendeskClient:
         if PROXIES:
             self.session.proxies.update(PROXIES)
             logger.info("Proxy configured: %s", PROXIES)
+        if not SSL_VERIFY:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            logger.warning("SSL verification disabled (SSL_VERIFY=false)")
+        self.session.verify = SSL_VERIFY
 
     def _request(self, endpoint: str, params: dict | None = None) -> dict[str, Any]:
         """
@@ -161,4 +167,5 @@ class ZendeskClient:
         data = self._request(
             f"/api/v2/tickets/{ticket_id}/side_conversations/{side_conv_id}/events.json"
         )
-        return data.get("side_conversation_events", [])
+        # API returns key "events", not "side_conversation_events"
+        return data.get("events", [])
