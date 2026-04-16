@@ -23,8 +23,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "thread_direction":   {"en": "Thread Direction",     "es": "Dirección del Thread"},
     "recipient_type":     {"en": "Recipient Type",       "es": "Tipo de Destinatario"},
     "classification":     {"en": "Classification",       "es": "Clasificación"},
-    "ticket_status_filter":{"en": "Ticket Status",        "es": "Estado del Ticket"},
-    "all":                {"en": "All",                  "es": "Todos"},
+    "ticket_status_filter":{"en": "Ticket Status",         "es": "Estado del Ticket"},
+    "correspondent_filter":{"en": "Correspondent",         "es": "Corresponsal"},
+    "ticket_id_filter":    {"en": "Drill by Ticket ID",    "es": "Drill por Ticket ID"},
+    "ticket_id_placeholder":{"en": "e.g. 22525756 (empty = all)", "es": "Ej: 22525756 (vacío = todos)"},
+    "active_filters":     {"en": "Active filters",         "es": "Filtros activos"},
+    "clear_filters":      {"en": "Clear all filters",      "es": "Limpiar filtros"},
+    "all":                {"en": "All",                   "es": "Todos"},
 
     # ---------- KPIs ----------
     "total_tickets":       {"en": "Total tickets",        "es": "Tickets totales"},

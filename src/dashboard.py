@@ -226,22 +226,85 @@ sel_status = st.sidebar.selectbox(
     index=status_opts.index(_default_status),
 )
 
+# Correspondent drill-in — limitar todo al partner seleccionado
+correspondent_opts = [ALL] + sorted(
+    sc_df[sc_df["sc_recipient_type"] == "correspondent"]["correspondent"]
+    .dropna().unique().tolist()
+)
+sel_correspondent = st.sidebar.selectbox(
+    t("correspondent_filter", lang),
+    correspondent_opts,
+    index=0,
+)
+
+# Ticket ID drill-in — ir directo a un ticket específico
+sel_ticket_id_raw = st.sidebar.text_input(
+    t("ticket_id_filter", lang),
+    value="",
+    placeholder=t("ticket_id_placeholder", lang),
+)
+sel_ticket_id: int | None = None
+if sel_ticket_id_raw.strip():
+    try:
+        sel_ticket_id = int(sel_ticket_id_raw.strip())
+    except ValueError:
+        st.sidebar.warning(t("search_invalid", lang))
+
 st.sidebar.markdown("---")
+
+# Active filters summary (helps users see what's currently applied)
+_active_filters = []
+if sel_direction != ALL:
+    _active_filters.append(f"direction: `{sel_direction}`")
+if sel_recipient != ALL:
+    _active_filters.append(f"recipient: `{sel_recipient}`")
+if sel_reason != ALL:
+    _active_filters.append(f"classification: `{sel_reason}`")
+if sel_status != ALL:
+    _active_filters.append(f"status: `{sel_status}`")
+if sel_correspondent != ALL:
+    _active_filters.append(f"correspondent: `{sel_correspondent}`")
+if sel_ticket_id is not None:
+    _active_filters.append(f"ticket: `{sel_ticket_id}`")
+
+if _active_filters:
+    st.sidebar.markdown(f"**{t('active_filters', lang)}:**")
+    for f in _active_filters:
+        st.sidebar.markdown(f"- {f}")
+    st.sidebar.markdown("---")
+
 st.sidebar.caption(
     f"DB: `{DB_PATH.name}`  \n"
     f"{len(tickets_df):,} tickets · {len(sc_df):,} side convs"
 )
 
+def apply_sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply all sidebar filters to any dataframe that has the relevant columns.
+    Missing columns are skipped gracefully so this works for both sc_df and full_df.
+    """
+    out = df.copy()
+    if sel_direction != ALL and "sc_direction" in out.columns:
+        out = out[out["sc_direction"] == sel_direction]
+    if sel_recipient != ALL and "sc_recipient_type" in out.columns:
+        out = out[out["sc_recipient_type"] == sel_recipient]
+    if sel_reason != ALL and "sc_reason_classification" in out.columns:
+        out = out[out["sc_reason_classification"] == sel_reason]
+    if sel_status != ALL and "ticket_status" in out.columns:
+        out = out[out["ticket_status"] == sel_status]
+    if sel_correspondent != ALL and "correspondent" in out.columns:
+        out = out[out["correspondent"] == sel_correspondent]
+    elif sel_correspondent != ALL and "correspondent_raw" in out.columns:
+        # Fallback for full_df which has correspondent_raw instead of correspondent
+        corr_clean = out["correspondent_raw"].fillna("").str.split("::").str[0].str.strip()
+        out = out[corr_clean == sel_correspondent]
+    if sel_ticket_id is not None and "ticket_id" in out.columns:
+        out = out[out["ticket_id"] == sel_ticket_id]
+    return out
+
+
 # Aplicar filtros a side_convs
-filtered = sc_df.copy()
-if sel_direction != ALL:
-    filtered = filtered[filtered["sc_direction"] == sel_direction]
-if sel_recipient != ALL:
-    filtered = filtered[filtered["sc_recipient_type"] == sel_recipient]
-if sel_reason != ALL:
-    filtered = filtered[filtered["sc_reason_classification"] == sel_reason]
-if sel_status != ALL:
-    filtered = filtered[filtered["ticket_status"] == sel_status]
+filtered = apply_sidebar_filters(sc_df)
 
 
 # =========================================================================
@@ -478,13 +541,7 @@ elif page == "nav_operational":
     st.caption(t("p1_caption", lang))
     st.markdown("---")
 
-    df = sc_df.copy()
-    if sel_direction != ALL:
-        df = df[df["sc_direction"] == sel_direction]
-    if sel_recipient != ALL:
-        df = df[df["sc_recipient_type"] == sel_recipient]
-    if sel_reason != ALL:
-        df = df[df["sc_reason_classification"] == sel_reason]
+    df = apply_sidebar_filters(sc_df)
 
     # Solo para threads hacia external (donde tiene sentido medir SLA)
     df_external = df[df["sc_direction"].isin(["ria_to_external", "ria_to_client"])].copy()
@@ -661,10 +718,18 @@ elif page == "nav_partner":
     st.caption(t("p2_caption", lang))
     st.markdown("---")
 
-    # Solo threads hacia corresponsales
+    # Solo threads hacia corresponsales, aplicando los demás filtros del sidebar
     partner_df = sc_df[sc_df["sc_recipient_type"] == "correspondent"].copy()
+    if sel_direction != ALL:
+        partner_df = partner_df[partner_df["sc_direction"] == sel_direction]
     if sel_reason != ALL:
         partner_df = partner_df[partner_df["sc_reason_classification"] == sel_reason]
+    if sel_status != ALL:
+        partner_df = partner_df[partner_df["ticket_status"] == sel_status]
+    if sel_correspondent != ALL:
+        partner_df = partner_df[partner_df["correspondent"] == sel_correspondent]
+    if sel_ticket_id is not None:
+        partner_df = partner_df[partner_df["ticket_id"] == sel_ticket_id]
 
     if partner_df.empty:
         st.info("No partner threads with current filters.")
@@ -817,15 +882,29 @@ elif page == "nav_customer":
     st.caption(t("p3_caption", lang))
     st.markdown("---")
 
-    # Threads directos al cliente
+    # Threads directos al cliente (aplicando filtros del sidebar)
     client_df = sc_df[sc_df["sc_recipient_type"] == "client"].copy()
+    if sel_direction != ALL:
+        client_df = client_df[client_df["sc_direction"] == sel_direction]
+    if sel_reason != ALL:
+        client_df = client_df[client_df["sc_reason_classification"] == sel_reason]
+    if sel_status != ALL:
+        client_df = client_df[client_df["ticket_status"] == sel_status]
+    if sel_ticket_id is not None:
+        client_df = client_df[client_df["ticket_id"] == sel_ticket_id]
+
+    # Universo de tickets (aplicando status + ticket_id para consistencia)
+    tickets_universe = tickets_df.copy()
+    if sel_status != ALL:
+        tickets_universe = tickets_universe[tickets_universe["status"] == sel_status]
+    if sel_ticket_id is not None:
+        tickets_universe = tickets_universe[tickets_universe["ticket_id"] == sel_ticket_id]
 
     # ------------------- KPIs -------------------
     c1, c2, c3, c4 = st.columns(4)
 
     tickets_with_client = client_df["ticket_id"].nunique()
-    total_tickets = tickets_with_client + tickets_df["ticket_id"].nunique()
-    pct_with_client = (tickets_with_client / max(len(tickets_df), 1)) * 100
+    pct_with_client = (tickets_with_client / max(len(tickets_universe), 1)) * 100
 
     # Client response rate = % client threads donde hubo al menos un reply del cliente
     with_cp_reply = client_df[client_df["total_exchanges"] > 1]
@@ -840,7 +919,7 @@ elif page == "nav_customer":
 
     c1.metric(t("m_pct_tickets_client", lang),
               f"{pct_with_client:.0f}%",
-              f"{tickets_with_client} / {len(tickets_df)}",
+              f"{tickets_with_client} / {len(tickets_universe)}",
               delta_color="off",
               help=t("m_pct_tickets_client_help", lang))
     c2.metric(t("m_client_response_rate", lang),
