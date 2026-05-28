@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adherencia — Payment Confirmation</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --paper: #F5F4EE;
+    --ink:   #1F1D1B;
+    --clay:  #CC785C;
+    --clay-dark: #A1543D;
+    --sand:  #EBE5D7;
+    --slate: #6A8CAA;
+    --slate-dark: #3C4D5E;
+    --border: rgba(20,20,19,0.10);
+    --green: #5A8A6A;
+    --red:   #B84A4A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Inter, -apple-system, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  /* ── Header ── */
+  .header {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 32px 48px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .header h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  .header .sub { font-size: 13px; opacity: 0.6; margin-top: 4px; }
+  .header .meta { font-size: 12px; opacity: 0.5; text-align: right; }
+  .lang-btn {
+    background: transparent;
+    border: 1px solid rgba(245,244,238,0.3);
+    color: var(--paper);
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  /* ── Layout ── */
+  .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+  .section { margin-bottom: 40px; }
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--clay);
+    margin-bottom: 16px;
+  }
+  /* ── KPI Grid ── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .kpi {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .kpi .value { font-size: 32px; font-weight: 700; line-height: 1; }
+  .kpi .label { font-size: 12px; color: #666; margin-top: 6px; }
+  .kpi.alert .value { color: var(--red); }
+  .kpi.good  .value { color: var(--green); }
+  .kpi.neutral .value { color: var(--clay); }
+  /* ── Cards ── */
+  .card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .card .analysis {
+    background: var(--sand);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-size: 13px;
+    margin-top: 16px;
+    line-height: 1.6;
+  }
+  /* ── Two-col ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  /* ── Table ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #888;
+    border-bottom: 2px solid var(--border);
+    padding: 8px 12px;
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  .adh-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .adh-low  { background: #FDE8E8; color: var(--red); }
+  .adh-mid  { background: #FFF3E0; color: #B06000; }
+  .adh-high { background: #E8F5E9; color: var(--green); }
+  /* ── Progress bar ── */
+  .bar-wrap { background: var(--sand); border-radius: 4px; height: 8px; margin-top: 4px; }
+  .bar-fill { height: 8px; border-radius: 4px; background: var(--clay); }
+  /* ── Bullets ── */
+  .bullets { list-style: none; padding: 0; }
+  .bullets li {
+    padding: 10px 0 10px 24px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    font-size: 13px;
+  }
+  .bullets li:last-child { border-bottom: none; }
+  .bullets li::before {
+    content: attr(data-num);
+    position: absolute;
+    left: 0;
+    color: var(--clay);
+    font-weight: 700;
+  }
+  /* ── Canvas ── */
+  .chart-wrap { position: relative; height: 260px; }
+  /* ── Lang toggle ── */
+  [data-en] { display: none; }
+  body.en [data-es] { display: none; }
+  body.en [data-en] { display: unset; }
+  .card.en [data-es] { display: none; }
+  .card.en [data-en] { display: unset; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <div class="sub" data-es>Ria Money Transfer · Zendesk Analytics</div>
+    <div class="sub" data-en>Ria Money Transfer · Zendesk Analytics</div>
+    <h1 data-es>Adherencia — Payment Confirmation</h1>
+    <h1 data-en>Adherence — Payment Confirmation</h1>
+    <div class="sub" data-es>Últimos 30 días · 28 May 2026 · n = 2,487 tickets</div>
+    <div class="sub" data-en>Last 30 days · 28 May 2026 · n = 2,487 tickets</div>
+  </div>
+  <div class="meta">
+    <button class="lang-btn" onclick="document.body.classList.toggle('en');this.textContent=document.body.classList.contains('en')?'ES':'EN'">EN</button>
+  </div>
+</div>
+
+<div class="page">
+
+<!-- KPIs -->
+<div class="section">
+  <div class="section-title" data-es>Resumen Ejecutivo</div>
+  <div class="section-title" data-en>Executive Summary</div>
+  <div class="kpi-grid">
+    <div class="kpi neutral">
+      <div class="value">2,487</div>
+      <div class="label" data-es>Tickets analizados (30 días)</div>
+      <div class="label" data-en>Tickets analyzed (30 days)</div>
+    </div>
+    <div class="kpi alert">
+      <div class="value">12.7%</div>
+      <div class="label" data-es>Adherencia global</div>
+      <div class="label" data-en>Overall adherence</div>
+    </div>
+    <div class="kpi alert">
+      <div class="value">2,172</div>
+      <div class="label" data-es>Tickets sin acción correcta (GAP)</div>
+      <div class="label" data-en>Tickets without correct action (GAP)</div>
+    </div>
+    <div class="kpi alert">
+      <div class="value">733</div>
+      <div class="label" data-es>GAP crítico — F1 Payment Confirmation</div>
+      <div class="label" data-en>Critical GAP — F1 Payment Confirmation</div>
+    </div>
+  </div>
+
+  <!-- Bullets ejecutivos -->
+  <div class="card" style="margin-top:16px;">
+    <ul class="bullets">
+      <li data-num="→" data-es>De 2,487 tickets Paid resueltos en 30 días, solo <strong>315 (12.7%)</strong> recibieron la acción correcta según el playbook operativo.</li>
+      <li data-num="→" data-en>Of 2,487 resolved Paid tickets in 30 days, only <strong>315 (12.7%)</strong> received the correct action per the operational playbook.</li>
+      <li data-num="→" data-es><strong>F1 es el escenario más crítico</strong>: 754 tickets elegibles para Payment Confirmation, solo 21 con la macro aplicada (2.8%). El GAP es de <strong>733 tickets</strong>.</li>
+      <li data-num="→" data-en><strong>F1 is the most critical scenario</strong>: 754 tickets eligible for Payment Confirmation, only 21 with macro applied (2.8%). Gap is <strong>733 tickets</strong>.</li>
+      <li data-num="→" data-es>F2 (POP con SC) es el escenario mejor ejecutado — Office Pick-Up alcanza <strong>73%</strong> de adherencia, lo que demuestra que el proceso funciona cuando está claro.</li>
+      <li data-num="→" data-en>F2 (POP with SC) is the best-executed scenario — Office Pick-Up reaches <strong>73%</strong> adherence, proving the process works when clearly defined.</li>
+      <li data-num="→" data-es>F4 y F5 (tickets Unreliable, exclusivos de Bank Deposit) tienen adherencia moderada (24/61 = 39.3% y 3/34 = 8.8%).</li>
+      <li data-num="→" data-en>F4 and F5 (Unreliable tickets, Bank Deposit only) show moderate adherence (24/61 = 39.3% and 3/34 = 8.8%).</li>
+    </ul>
+  </div>
+</div>
+
+<!-- CHART: ESCENARIOS -->
+<div class="section">
+  <div class="section-title" data-es>Adherencia por Escenario</div>
+  <div class="section-title" data-en>Adherence by Scenario</div>
+  <div class="two-col">
+    <div class="card">
+      <h3 data-es>Tickets por Escenario — Adherente vs GAP</h3>
+      <h3 data-en>Tickets by Scenario — Adherent vs GAP</h3>
+      <div class="chart-wrap">
+        <canvas id="chartEsc"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <h3 data-es>% Adherencia por Escenario</h3>
+      <h3 data-en>Adherence % by Scenario</h3>
+      <div class="chart-wrap">
+        <canvas id="chartEscPct"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th data-es>Esc.</th><th data-es>Acción Esperada</th><th data-es>Tickets</th><th data-es>Correctos</th><th data-es>GAP</th><th data-es>Adherencia</th>
+          <th data-en>Esc.</th><th data-en>Expected Action</th><th data-en>Tickets</th><th data-en>Correct</th><th data-en>GAP</th><th data-en>Adherence</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>F1</strong></td>
+          <td data-es>Payment Confirmation (macro)</td>
+          <td data-en>Payment Confirmation (macro)</td>
+          <td>754</td>
+          <td>21</td>
+          <td>733</td>
+          <td><span class="adh-badge adh-low">2.8%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F2</strong></td>
+          <td data-es>POP vía SC existente</td>
+          <td data-en>POP via existing SC</td>
+          <td>161</td>
+          <td>77</td>
+          <td>84</td>
+          <td><span class="adh-badge adh-high">47.8%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F3</strong></td>
+          <td data-es>Iniciar POP (>48h)</td>
+          <td data-en>Initiate POP (>48h)</td>
+          <td>1,477</td>
+          <td>190</td>
+          <td>1,287</td>
+          <td><span class="adh-badge adh-low">12.9%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F4</strong></td>
+          <td data-es>ETA email / POP Day 1</td>
+          <td data-en>ETA email / POP Day 1</td>
+          <td>61</td>
+          <td>24</td>
+          <td>37</td>
+          <td><span class="adh-badge adh-mid">39.3%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F5</strong></td>
+          <td data-es>SC al corresponsal</td>
+          <td data-en>SC to correspondent</td>
+          <td>34</td>
+          <td>3</td>
+          <td>31</td>
+          <td><span class="adh-badge adh-low">8.8%</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="analysis">
+      <span data-es><strong>F1 concentra el mayor volumen de GAP (733 tickets)</strong> — es la oportunidad de mejora más grande. F2 muestra que cuando el proceso está claro (SC ya abierta), los agentes lo siguen con mucha mayor consistencia.</span>
+      <span data-en><strong>F1 concentrates the largest GAP volume (733 tickets)</strong> — it is the biggest improvement opportunity. F2 shows that when the process is clear (SC already open), agents follow it with much greater consistency.</span>
+    </div>
+  </div>
+</div>
+
+<!-- CHART: F1 por DM -->
+<div class="section">
+  <div class="section-title" data-es>F1 · Payment Confirmation — Detalle por Delivery Method</div>
+  <div class="section-title" data-en>F1 · Payment Confirmation — Breakdown by Delivery Method</div>
+  <div class="two-col">
+    <div class="card">
+      <h3 data-es>Tickets Elegibles vs Adherentes</h3>
+      <h3 data-en>Eligible vs Adherent Tickets</h3>
+      <div class="chart-wrap">
+        <canvas id="chartF1"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <h3 data-es>% Adherencia F1 por Delivery Method</h3>
+      <h3 data-en>F1 Adherence % by Delivery Method</h3>
+      <table style="margin-top:8px;">
+        <thead>
+          <tr>
+            <th data-es>Delivery Method</th><th data-es>Elegibles</th><th data-es>Con macro</th><th data-es>GAP</th><th data-es>ADH%</th>
+            <th data-en>Delivery Method</th><th data-en>Eligible</th><th data-en>With macro</th><th data-en>GAP</th><th data-en>ADH%</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Bank Deposit</td>
+            <td>351</td>
+            <td>18</td>
+            <td>333</td>
+            <td><span class="adh-badge adh-low">5.1%</span></td>
+          </tr>
+          <tr>
+            <td>Home Delivery</td>
+            <td>7</td>
+            <td>0</td>
+            <td>7</td>
+            <td><span class="adh-badge adh-low">0.0%</span></td>
+          </tr>
+          <tr>
+            <td>Mobile Payment</td>
+            <td>161</td>
+            <td>2</td>
+            <td>159</td>
+            <td><span class="adh-badge adh-low">1.2%</span></td>
+          </tr>
+          <tr>
+            <td>Office Pick-Up</td>
+            <td>235</td>
+            <td>1</td>
+            <td>234</td>
+            <td><span class="adh-badge adh-low">0.4%</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="bar-wrap" style="margin-top:12px;height:12px;">
+        <div class="bar-fill" style="width:2.8%;background:var(--clay);height:12px;"></div>
+      </div>
+      <div style="font-size:12px;color:#888;margin-top:4px;" data-es>Adherencia F1 global: <strong>2.8%</strong> (21/754)</div>
+      <div style="font-size:12px;color:#888;margin-top:4px;" data-en>Overall F1 adherence: <strong>2.8%</strong> (21/754)</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="analysis">
+      <span data-es><strong>Bank Deposit tiene el mayor volumen absoluto de GAP (333 tickets)</strong>, pero Office Pick-Up tiene la adherencia más baja (0.4% — 1 de 235 tickets). Esto sugiere que la macro de Payment Confirmation no está siendo considerada para tickets de Pick-Up a pesar de aplicar el mismo playbook. Mobile Payment también está en rojo con 1.2%.</span>
+      <span data-en><strong>Bank Deposit has the largest absolute GAP (333 tickets)</strong>, but Office Pick-Up has the lowest adherence (0.4% — 1 out of 235 tickets). This suggests the Payment Confirmation macro is not being considered for Pick-Up tickets despite the same playbook applying. Mobile Payment is also critical at 1.2%.</span>
+    </div>
+  </div>
+</div>
+
+<!-- FULL TABLE BY DM -->
+<div class="section">
+  <div class="section-title" data-es>Tabla Completa — Todos los Escenarios × Delivery Method</div>
+  <div class="section-title" data-en>Full Table — All Scenarios × Delivery Method</div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th data-es>Esc.</th><th data-es>Delivery Method</th><th data-es>Tickets</th><th data-es>%Total</th><th data-es>Correctos</th><th data-es>GAP</th><th data-es>Adherencia</th>
+          <th data-en>Sce.</th><th data-en>Delivery Method</th><th data-en>Tickets</th><th data-en>%Total</th><th data-en>Correct</th><th data-en>GAP</th><th data-en>Adherence</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>F1</strong></td>
+          <td>Bank Deposit</td>
+          <td>351</td>
+          <td>14.1%</td>
+          <td>18</td>
+          <td>333</td>
+          <td><span class="adh-badge adh-low">5.1%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F1</strong></td>
+          <td>Home Delivery</td>
+          <td>7</td>
+          <td>0.3%</td>
+          <td>0</td>
+          <td>7</td>
+          <td><span class="adh-badge adh-low">0.0%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F1</strong></td>
+          <td>Mobile Payment</td>
+          <td>161</td>
+          <td>6.5%</td>
+          <td>2</td>
+          <td>159</td>
+          <td><span class="adh-badge adh-low">1.2%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F1</strong></td>
+          <td>Office Pick-Up</td>
+          <td>235</td>
+          <td>9.4%</td>
+          <td>1</td>
+          <td>234</td>
+          <td><span class="adh-badge adh-low">0.4%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F2</strong></td>
+          <td>Bank Deposit</td>
+          <td>29</td>
+          <td>1.2%</td>
+          <td>9</td>
+          <td>20</td>
+          <td><span class="adh-badge adh-mid">31.0%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F2</strong></td>
+          <td>Home Delivery</td>
+          <td>2</td>
+          <td>0.1%</td>
+          <td>2</td>
+          <td>0</td>
+          <td><span class="adh-badge adh-high">100.0%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F2</strong></td>
+          <td>Mobile Payment</td>
+          <td>67</td>
+          <td>2.7%</td>
+          <td>20</td>
+          <td>47</td>
+          <td><span class="adh-badge adh-mid">29.9%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F2</strong></td>
+          <td>Office Pick-Up</td>
+          <td>63</td>
+          <td>2.5%</td>
+          <td>46</td>
+          <td>17</td>
+          <td><span class="adh-badge adh-high">73.0%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F3</strong></td>
+          <td>Bank Deposit</td>
+          <td>604</td>
+          <td>24.3%</td>
+          <td>62</td>
+          <td>542</td>
+          <td><span class="adh-badge adh-low">10.3%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F3</strong></td>
+          <td>Home Delivery</td>
+          <td>5</td>
+          <td>0.2%</td>
+          <td>1</td>
+          <td>4</td>
+          <td><span class="adh-badge adh-mid">20.0%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F3</strong></td>
+          <td>Mobile Payment</td>
+          <td>270</td>
+          <td>10.9%</td>
+          <td>41</td>
+          <td>229</td>
+          <td><span class="adh-badge adh-mid">15.2%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F3</strong></td>
+          <td>Office Pick-Up</td>
+          <td>598</td>
+          <td>24.0%</td>
+          <td>86</td>
+          <td>512</td>
+          <td><span class="adh-badge adh-low">14.4%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F4</strong></td>
+          <td>Bank Deposit</td>
+          <td>61</td>
+          <td>2.5%</td>
+          <td>24</td>
+          <td>37</td>
+          <td><span class="adh-badge adh-mid">39.3%</span></td>
+        </tr>
+        <tr>
+          <td><strong>F5</strong></td>
+          <td>Bank Deposit</td>
+          <td>34</td>
+          <td>1.4%</td>
+          <td>3</td>
+          <td>31</td>
+          <td><span class="adh-badge adh-low">8.8%</span></td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr style="font-weight:600;border-top:2px solid var(--border);">
+          <td colspan="2" data-es>TOTAL</td>
+          <td colspan="2" data-en>TOTAL</td>
+          <td>2,487</td>
+          <td>100%</td>
+          <td>315</td>
+          <td>2,172</td>
+          <td><span class="adh-badge adh-low">12.7%</span></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<!-- RECOMENDACIONES -->
+<div class="section">
+  <div class="section-title" data-es>Recomendaciones</div>
+  <div class="section-title" data-en>Recommendations</div>
+  <div class="card">
+    <ul class="bullets">
+      <li data-num="1" data-es><strong>Entrenamiento urgente en F1 para todos los delivery methods.</strong> El 97.2% de los tickets elegibles para Payment Confirmation no recibe la macro. Priorizar office_pick-up (234 tickets de GAP) y bank_deposit (333 tickets de GAP).</li>
+      <li data-num="1" data-en><strong>Urgent F1 training across all delivery methods.</strong> 97.2% of Payment Confirmation-eligible tickets do not receive the macro. Prioritize office_pick-up (234 GAP tickets) and bank_deposit (333 GAP tickets).</li>
+      <li data-num="2" data-es><strong>Replicar el modelo de F2 Office Pick-Up (73%) hacia F1.</strong> Los agentes que manejan office_pick-up SÍ aplican POP correctamente cuando hay SC abierta — el problema es la falta de consistencia en la detección del escenario F1.</li>
+      <li data-num="2" data-en><strong>Replicate the F2 Office Pick-Up model (73%) into F1.</strong> Agents handling office_pick-up DO apply POP correctly when SC is open — the issue is lack of consistency in detecting the F1 scenario.</li>
+      <li data-num="3" data-es><strong>Verificar si la macro de Payment Confirmation está disponible para todos los grupos que atienden office_pick-up y mobile_payment.</strong> La adherencia casi nula en esos delivery methods puede indicar que la macro no aparece en su interfaz.</li>
+      <li data-num="3" data-en><strong>Verify whether the Payment Confirmation macro is available to all groups handling office_pick-up and mobile_payment.</strong> Near-zero adherence in those delivery methods may indicate the macro doesn't appear in their interface.</li>
+      <li data-num="4" data-es><strong>F5 necesita atención (8.8%).</strong> Cuando la transferencia es Unreliable y tiene más de 48h, el agente debe abrir SC al corresponsal — acción que requiere más pasos y tiene la segunda peor adherencia.</li>
+      <li data-num="4" data-en><strong>F5 needs attention (8.8%).</strong> When the transfer is Unreliable and over 48h, the agent must open an SC to the correspondent — an action that requires more steps and has the second-worst adherence.</li>
+      <li data-num="5" data-es><strong>Considerar automatización para F1.</strong> Si el sistema puede detectar bank_deposit + Paid + &lt;48h + sin SC, un trigger puede enviar automáticamente la confirmación de pago, eliminando la dependencia del agente.</li>
+      <li data-num="5" data-en><strong>Consider automation for F1.</strong> If the system can detect bank_deposit + Paid + &lt;48h + no SC, a trigger can automatically send the payment confirmation, removing agent dependency.</li>
+      <li data-num="6" data-es><strong>Establecer meta de adherencia mensual.</strong> Línea base actual: 12.7% global / 2.8% F1. Meta sugerida: 40% global / 25% F1 en 90 días con plan de entrenamiento activo.</li>
+      <li data-num="6" data-en><strong>Establish monthly adherence targets.</strong> Current baseline: 12.7% overall / 2.8% F1. Suggested target: 40% overall / 25% F1 in 90 days with active training plan.</li>
+    </ul>
+  </div>
+</div>
+
+</div><!-- /page -->
+
+<script>
+const CLAY      = '#CC785C';
+const CLAY_DARK = '#A1543D';
+const SAND      = '#EBE5D7';
+const SLATE     = '#6A8CAA';
+const GREEN     = '#5A8A6A';
+const RED       = '#B84A4A';
+const INK       = '#1F1D1B';
+
+const escLabels   = ["F1", "F2", "F3", "F4", "F5"];
+const escAdherent = [21, 77, 190, 24, 3];
+const escGap      = [733, 84, 1287, 37, 31];
+const escAdh      = [2.8, 47.8, 12.9, 39.3, 8.8];
+
+const f1Labels    = ["Bank Deposit", "Office Pick-Up", "Mobile Payment", "Home Delivery"];
+const f1Adherent  = [18, 1, 2, 0];
+const f1Gap       = [333, 234, 159, 7];
+const f1Pct       = [5.1, 0.4, 1.2, 0.0];
+
+const defOpts = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 12 } },
+    tooltip: { cornerRadius: 4 }
+  }
+};
+
+// Chart 1: Escenarios stacked bar
+new Chart(document.getElementById('chartEsc'), {
+  type: 'bar',
+  data: {
+    labels: escLabels,
+    datasets: [
+      { label: 'Adherente', data: escAdherent, backgroundColor: GREEN, borderRadius: 3 },
+      { label: 'GAP', data: escGap, backgroundColor: '#E8D0C4', borderRadius: 3 }
+    ]
+  },
+  options: { ...defOpts, scales: { x: { stacked: true }, y: { stacked: true, grid: { color: '#eee' } } } }
+});
+
+// Chart 2: % Adherencia por escenario
+new Chart(document.getElementById('chartEscPct'), {
+  type: 'bar',
+  data: {
+    labels: escLabels,
+    datasets: [{
+      label: '% Adherencia',
+      data: escAdh,
+      backgroundColor: escAdh.map(v => v >= 40 ? GREEN : v >= 15 ? CLAY : RED),
+      borderRadius: 4
+    }]
+  },
+  options: {
+    ...defOpts,
+    scales: {
+      y: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#eee' } }
+    },
+    plugins: {
+      ...defOpts.plugins,
+      legend: { display: false }
+    }
+  }
+});
+
+// Chart 3: F1 por DM stacked bar
+new Chart(document.getElementById('chartF1'), {
+  type: 'bar',
+  data: {
+    labels: f1Labels,
+    datasets: [
+      { label: 'Adherente', data: f1Adherent, backgroundColor: GREEN, borderRadius: 3 },
+      { label: 'GAP', data: f1Gap, backgroundColor: '#E8D0C4', borderRadius: 3 }
+    ]
+  },
+  options: { ...defOpts, scales: { x: { stacked: true }, y: { stacked: true, grid: { color: '#eee' } } } }
+});
+</script>
+</body>
+</html>
