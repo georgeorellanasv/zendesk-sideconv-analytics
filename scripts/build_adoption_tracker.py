@@ -70,17 +70,37 @@ for _,t in elig:
 ct_pct = {k: (round(v["trig"]/v["n"]*100) if v["n"] else 0) for k,v in ct.items()}
 
 # diario
-byday = defaultdict(lambda:{"n":0,"adh":0,"trig":0})
+byday = defaultdict(lambda:{"n":0,"adh":0,"trig":0,"rfc":0,"pop":0,"nada":0})
 for r,t in elig:
     d = r["created_at"][:10]
     byday[d]["n"]+=1
     if TRIGGER in t: byday[d]["trig"]+=1
+    if RFC in t: byday[d]["rfc"]+=1
     if TRIGGER in t and RFC in t: byday[d]["adh"]+=1
+    if t & POP: byday[d]["pop"]+=1
+    if not (t & {TRIGGER,RFC,MACRO} or t & POP): byday[d]["nada"]+=1
 days = sorted(byday)
 day_n    = [byday[d]["n"]    for d in days]
 day_adh  = [byday[d]["adh"]  for d in days]
 day_trig = [byday[d]["trig"] for d in days]
 day_pct  = [round(byday[d]["adh"]/byday[d]["n"]*100,1) if byday[d]["n"] else 0 for d in days]
+
+# Filas de la tabla de detalle diario (más reciente arriba)
+detail_rows = ""
+for d in sorted(days, reverse=True):
+    b = byday[d]
+    p = round(b["adh"]/b["n"]*100) if b["n"] else 0
+    badge = "#5A8A6A" if p>=30 else "#C07820" if p>=10 else "#B84A4A"
+    detail_rows += (
+        f'<tr><td><strong>{d}</strong></td>'
+        f'<td>{b["n"]}</td>'
+        f'<td>{b["trig"]}</td>'
+        f'<td>{b["rfc"]}</td>'
+        f'<td>{b["pop"]}</td>'
+        f'<td>{b["nada"]}</td>'
+        f'<td><strong>{b["adh"]}</strong></td>'
+        f'<td><span style="font-weight:700;color:{badge}">{p}%</span></td></tr>'
+    )
 
 pct = lambda x: round(x/n*100) if n else 0
 TODAY = datetime.now().strftime("%d %b %Y") if False else maxd  # usa fecha de la data
@@ -281,6 +301,40 @@ body{{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:v
   <div class="explain">
     <span data-es>Cuando el entrenamiento empiece y se active el trigger para más grupos, las barras verdes y la línea de % deberían crecer. Hoy es la línea base.</span>
     <span data-en>When training begins and the trigger activates for more groups, the green bars and the % line should grow. Today is the baseline.</span>
+  </div>
+</div>
+
+<!-- DETALLE DIARIO (TABLA) -->
+<div class="sec-title" data-es>Detalle día por día</div>
+<div class="sec-title" data-en>Day-by-day detail</div>
+<div class="card">
+  <div class="sub" data-es>Los números exactos de cada día. Día más reciente arriba.</div>
+  <div class="sub" data-en>Exact numbers for each day. Most recent day on top.</div>
+  <table>
+    <thead><tr>
+      <th data-es>Día</th><th data-en>Day</th>
+      <th data-es>Escenarios</th><th data-en>Scenarios</th>
+      <th data-es>Con aviso</th><th data-en>Alerted</th>
+      <th data-es>Con RFC</th><th data-en>With RFC</th>
+      <th data-es>Eligió POP</th><th data-en>Chose POP</th>
+      <th data-es>Sin acción</th><th data-en>No action</th>
+      <th data-es>Adherentes</th><th data-en>Adherent</th>
+      <th>%</th>
+    </tr></thead>
+    <tbody>
+      {detail_rows}
+    </tbody>
+    <tfoot>
+      <tr style="font-weight:700;border-top:2px solid var(--border)">
+        <td data-es>TOTAL</td><td data-en>TOTAL</td>
+        <td>{n}</td><td>{trig}</td><td>{rfc}</td><td>{pop}</td><td>{nada}</td>
+        <td>{adh}</td><td>{pct(adh)}%</td>
+      </tr>
+    </tfoot>
+  </table>
+  <div class="explain">
+    <span data-es><strong>Cómo leer la fila:</strong> "Escenarios" = llamadas donde debía mandarse confirmación · "Con aviso" = el sistema disparó el trigger · "Con RFC" = el agente marcó el motivo · "Adherentes" = cumplió las dos (aviso + RFC). La brecha entre "Escenarios" y "Adherentes" es la oportunidad de cada día.</span>
+    <span data-en><strong>How to read a row:</strong> "Scenarios" = calls where confirmation should have been sent · "Alerted" = the system fired the trigger · "With RFC" = the agent set the reason · "Adherent" = met both (alert + RFC). The gap between "Scenarios" and "Adherent" is each day's opportunity.</span>
   </div>
 </div>
 
