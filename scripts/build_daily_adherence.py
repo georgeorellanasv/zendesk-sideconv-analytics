@@ -15,6 +15,14 @@ VA_ONLY     = {"inbound_call_-_va_only", "va_only_solved"}
 US_WFM      = {"ria_wfm_us_phone", "cxi_ria_wfm_nam_care_phone"}
 EMEA_WFM    = {"ria_wfm_europe_es_uk_phone", "cxi_ria_wfm_emea_care_phone"}
 
+# Tags de POP — el "atajo caro". En F1 (<48h, pagado) es el error que
+# queremos ver bajar mientras Payment Confirmation sube.
+POP_TAGS = {
+    "new_pop_ticket", "pop_side_convo_macro", "pop_side_convo_macro_es",
+    "pop_interbank_sc", "ria_pop_day_1_qt", "dandelion_pop_day_1",
+    "dandelion_request_pop", "ria_pop_success_qt",
+}
+
 def classify(r):
     ok_48  = r["cond_48h"] == "True"
     ok_sub = r["cond_substatus"] == "True"
@@ -41,11 +49,14 @@ def get_group(tags):
     return "other"
 
 rows = list(csv.DictReader(open("reports/macro_adherence_report.csv", encoding="utf-8")))
-f1_all = [r for r in rows if classify(r) == "F1"]
+# F1 = foco principal del dashboard. F2 se incluye SOLO para el gráfico de
+# sustitución: juntos forman el "territorio Payment Confirmation" (pagado+<48h),
+# donde el atajo POP es visible (un POP abre una SC, lo que reclasifica F1->F2).
+terr_all = [r for r in rows if classify(r) in ("F1", "F2")]
 
 # ── Construir lista de tickets para JS ────────────────────────────────────────
 tickets_js = []
-for r in f1_all:
+for r in terr_all:
     tags    = set(r.get("tags","").split("|"))
     ch      = get_channel(tags)
     grp     = get_group(tags)
@@ -54,10 +65,11 @@ for r in f1_all:
     dt      = r.get("created_at","")[:10]
     tickets_js.append({
         "date": dt, "channel": ch, "group": grp,
-        "dm": dm, "adherent": adh,
+        "dm": dm, "adherent": adh, "scen": classify(r),
         "has_macro":   MACRO_TAG in tags,
         "has_rfc":     RFC_TAG in tags,
         "has_trigger": "payment_confirmation_advisory_applied" in tags,
+        "has_pop":     bool(tags & POP_TAGS),
     })
 
 TODAY = date.today().strftime("%d %b %Y")
@@ -248,6 +260,29 @@ body.en [data-en]{{display:unset}}
   </div>
 </div>
 
+<!-- HERO: Sustitución POP → Payment Confirmation -->
+<div class="sec-title" data-es>★ La métrica clave — ¿Estamos sustituyendo POP por Payment Confirmation?</div>
+<div class="sec-title" data-en>★ The key metric — Are we substituting POP with Payment Confirmation?</div>
+<div class="card" style="border:2px solid var(--clay)">
+  <div class="card-header">
+    <h3 data-es>Payment Confirmation (↑ correcto) vs POP (↓ atajo caro) — territorio pagado &lt;48h</h3>
+    <h3 data-en>Payment Confirmation (↑ correct) vs POP (↓ expensive shortcut) — paid &lt;48h territory</h3>
+    <div class="card-sub" data-es>El éxito no es una sola línea subiendo — son dos líneas en sentidos opuestos. Mide sobre todo el territorio donde la acción correcta es confirmar (pagado + &lt;48h, F1+F2 juntos). Se combinan porque abrir un POP crea una Side Conversation, lo que mueve el ticket de F1 a F2 — el atajo solo es visible al juntar ambos.</div>
+    <div class="card-sub" data-en>Success isn't one line rising — it's two lines moving in opposite directions. Measured over the full territory where the correct action is to confirm (paid + &lt;48h, F1+F2 combined). They're combined because opening a POP creates a Side Conversation, which moves the ticket from F1 to F2 — the shortcut is only visible when both are joined.</div>
+  </div>
+  <div class="chart-wrap tall"><canvas id="chartSubst"></canvas></div>
+  <div class="explain">
+    <span data-es>
+      <strong>Cómo leerlo:</strong> la línea <span style="color:#5A8A6A;font-weight:700">verde (Payment Confirmation)</span> debe subir; la línea <span style="color:#B84A4A;font-weight:700">roja (POP)</span> debe bajar. Cuando se cruzan, significa que el equipo dejó de usar el POP como reflejo y está resolviendo al primer contacto.
+      <span class="tip">💡 Importante: el POP NO es un error en todos los casos — en F3 (&gt;48h) es la acción correcta. Aquí medimos solo F1, donde el POP es un atajo evitable. La sustitución es más visible en Bank Deposit (usa el filtro de Delivery Method).</span>
+    </span>
+    <span data-en>
+      <strong>How to read it:</strong> the <span style="color:#5A8A6A;font-weight:700">green line (Payment Confirmation)</span> should rise; the <span style="color:#B84A4A;font-weight:700">red line (POP)</span> should fall. When they cross, it means the team stopped using POP as a reflex and is resolving at first contact.
+      <span class="tip">💡 Important: POP is NOT an error in every case — in F3 (&gt;48h) it's the correct action. Here we measure only F1, where POP is an avoidable shortcut. Substitution is most visible in Bank Deposit (use the Delivery Method filter).</span>
+    </span>
+  </div>
+</div>
+
 <!-- CHART 1: Tendencia % diario -->
 <div class="sec-title" data-es>¿Está mejorando la adherencia?</div>
 <div class="sec-title" data-en>Is adherence improving?</div>
@@ -405,11 +440,13 @@ function getFilters() {{
   }};
 }}
 
-function filterTickets(f) {{
+function filterTickets(f, scens) {{
+  scens = scens || ['F1'];   // default: solo F1 (foco del dashboard)
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - f.days);
   const cutStr = cutoff.toISOString().slice(0,10);
   return ALL_TICKETS.filter(t => {{
+    if (!scens.includes(t.scen)) return false;
     if (t.adherent === null) return false; // va_only
     if (t.date < cutStr) return false;
     if (f.group   !== 'all' && t.group   !== f.group)   return false;
@@ -491,6 +528,52 @@ function refresh() {{
 
   const adhEl = document.getElementById('kpiAdh').parentElement;
   adhEl.className = 'kpi ' + (parseFloat(adhPct)>=30?'green':parseFloat(adhPct)>=10?'':'red');
+
+  // Chart HERO: Sustitución POP -> Payment Confirmation
+  // Mide sobre el TERRITORIO Payment Confirmation = F1+F2 (pagado + <48h).
+  // Se combinan porque abrir un POP crea una SC, lo que mueve el ticket de F1 a F2:
+  // el atajo solo es visible al juntar ambos.
+  // PC%  = % con macro o RFC (acción correcta de confirmación)
+  // POP% = % con tag de POP (el atajo caro que crea backlog)
+  const territory = filterTickets(f, ['F1','F2']);
+  const substDays = [...new Set(territory.map(t=>t.date))].sort();
+  const popByDay = {{}};
+  territory.forEach(t => {{
+    if (!popByDay[t.date]) popByDay[t.date] = {{pc:0, pop:0, n:0}};
+    popByDay[t.date].n++;
+    if (t.has_macro || t.has_rfc) popByDay[t.date].pc++;
+    if (t.has_pop)                popByDay[t.date].pop++;
+  }});
+  const pcPct  = substDays.map(d => popByDay[d].n ? +(popByDay[d].pc /popByDay[d].n*100).toFixed(1) : 0);
+  const popPct = substDays.map(d => popByDay[d].n ? +(popByDay[d].pop/popByDay[d].n*100).toFixed(1) : 0);
+  const pcAbs  = substDays.map(d => popByDay[d].pc);
+  const popAbs = substDays.map(d => popByDay[d].pop);
+
+  makeChart('chartSubst', {{
+    type:'line',
+    data:{{labels:substDays, datasets:[
+      {{label:'Payment Confirmation % (correcto ↑)', data:pcPct,
+        borderColor:'#5A8A6A', backgroundColor:'rgba(90,138,106,.10)',
+        pointRadius:4, pointHoverRadius:6, tension:.3, fill:true, borderWidth:3}},
+      {{label:'POP % (atajo evitable ↓)', data:popPct,
+        borderColor:'#B84A4A', backgroundColor:'rgba(184,74,74,.08)',
+        pointRadius:4, pointHoverRadius:6, tension:.3, fill:true, borderWidth:3,
+        borderDash:[5,3]}}
+    ]}},
+    options:{{...BASE,
+      plugins:{{...BASE.plugins,
+        tooltip:{{callbacks:{{label:ctx=>{{
+          const i=ctx.dataIndex;
+          const nn=popByDay[substDays[i]]?popByDay[substDays[i]].n:0;
+          if(ctx.datasetIndex===0) return ` Payment Confirmation: ${{pcPct[i]}}% (${{pcAbs[i]}} de ${{nn}})`;
+          return ` POP: ${{popPct[i]}}% (${{popAbs[i]}} de ${{nn}})`;
+        }}}}}}
+      }},
+      scales:{{...BASE.scales, y:{{...BASE.scales.y,min:0,
+        max:Math.max(50,Math.max(...pcPct,...popPct)+10),
+        ticks:{{callback:v=>v+'%'}}}}}}
+    }}
+  }});
 
   // Chart 1: % diario
   makeChart('chartPct', {{
