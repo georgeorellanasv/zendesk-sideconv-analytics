@@ -22,10 +22,17 @@ POP     = {"new_pop_ticket","pop_side_convo_macro","pop_side_convo_macro_es",
 VA      = {"inbound_call_-_va_only","va_only_solved"}
 WINDOW_DAYS = 15
 
-def is_voice_direct(tags):
+# Una llamada "llega al agente" si NO la resolvió solo el VA.
+# Incluye: directa al agente (inbound_call) Y transferida del VA al rep (va_to_rep / cxi voice).
+def reaches_agent(tags):
     if tags & VA: return False
-    if tags & {"inbound_call_-_va_to_rep","cxi_ch_voice"}: return False
-    return "inbound_call" in tags
+    if tags & {"inbound_call_-_va_to_rep","cxi_ch_voice"}: return True
+    if "inbound_call" in tags: return True
+    return False
+
+def call_type(tags):
+    if tags & {"inbound_call_-_va_to_rep","cxi_ch_voice"}: return "transferida"  # VA -> rep
+    return "directa"
 
 def is_f1(r):
     return r["cond_substatus"]=="True" and r["cond_48h"]=="True" and r["cond_no_sc"]=="True"
@@ -41,7 +48,7 @@ for r in rows:
     if not is_f1(r): continue
     if r["created_at"][:10] < cut: continue
     tags = set(r.get("tags","").split("|"))
-    if not is_voice_direct(tags): continue
+    if not reaches_agent(tags): continue       # solo llamadas que el agente recibe
     elig.append((r, tags))
 
 n      = len(elig)
@@ -53,6 +60,14 @@ nada   = sum(1 for _,t in elig if not (t & {TRIGGER,RFC,MACRO} or t & POP))
 # de los que recibieron trigger, cuantos respondio el rep con RFC
 rep_resp = sum(1 for _,t in elig if TRIGGER in t and RFC in t)
 rep_resp_pct = round(rep_resp/trig*100,1) if trig else 0
+
+# Desglose por tipo de llamada: revela DÓNDE falta cobertura del trigger
+ct = {"directa":{"n":0,"trig":0}, "transferida":{"n":0,"trig":0}}
+for _,t in elig:
+    k = call_type(t)
+    ct[k]["n"] += 1
+    if TRIGGER in t: ct[k]["trig"] += 1
+ct_pct = {k: (round(v["trig"]/v["n"]*100) if v["n"] else 0) for k,v in ct.items()}
 
 # diario
 byday = defaultdict(lambda:{"n":0,"adh":0,"trig":0})
@@ -135,8 +150,8 @@ body{{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:v
     <div class="sub">Ria Money Transfer · Care Operations</div>
     <h1 data-es>Adopción de Payment Confirmation</h1>
     <h1 data-en>Payment Confirmation Adoption</h1>
-    <div class="sub" data-es>Bank Deposit · Voz directa · últimos {WINDOW_DAYS} días (hasta {TODAY})</div>
-    <div class="sub" data-en>Bank Deposit · Direct voice · last {WINDOW_DAYS} days (through {TODAY})</div>
+    <div class="sub" data-es>Bank Deposit · llamadas atendidas por agente · últimos {WINDOW_DAYS} días (hasta {TODAY})</div>
+    <div class="sub" data-en>Bank Deposit · agent-handled calls · last {WINDOW_DAYS} days (through {TODAY})</div>
   </div>
   <div><button class="lang-btn" onclick="document.body.classList.toggle('en');this.textContent=document.body.classList.contains('en')?'ES':'EN'">EN</button></div>
 </div>
@@ -145,8 +160,8 @@ body{{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:v
 
 <div class="card" style="margin-top:24px">
   <div class="explain" style="margin-top:0">
-    <span data-es><strong>Qué mide esta página:</strong> de todas las llamadas de voz directa sobre transferencias Bank Deposit ya pagadas y recientes (&lt;48h) — es decir, donde la acción correcta era enviar una Payment Confirmation — ¿en cuántas se hizo bien? Para voz, "bien hecho" = el sistema avisó al agente (trigger) <strong>y</strong> el agente marcó el motivo correcto. La macro no cuenta aquí porque en voz la confirmación se envía por FX Client, no por Zendesk.</span>
-    <span data-en><strong>What this page measures:</strong> of all direct-voice calls about already-paid, recent (&lt;48h) Bank Deposit transfers — i.e. where the correct action was to send a Payment Confirmation — in how many was it done right? For voice, "done right" = the system alerted the agent (trigger) <strong>and</strong> the agent selected the correct reason. The macro doesn't count here because in voice the confirmation is sent via FX Client, not Zendesk.</span>
+    <span data-es><strong>Qué mide esta página:</strong> de todas las llamadas de voz que <strong>atendió un agente</strong> (directas + transferidas del asistente virtual) sobre transferencias Bank Deposit ya pagadas y recientes (&lt;48h) — donde la acción correcta era enviar una Payment Confirmation — ¿en cuántas se hizo bien? Solo cuentan las llamadas que el agente recibe; las resueltas solo por el asistente virtual se excluyen. Para voz, "bien hecho" = el sistema avisó al agente (trigger) <strong>y</strong> el agente marcó el motivo correcto. La macro no cuenta aquí porque en voz la confirmación se envía por FX Client, no por Zendesk.</span>
+    <span data-en><strong>What this page measures:</strong> of all voice calls <strong>handled by an agent</strong> (direct + transferred from the virtual assistant) about already-paid, recent (&lt;48h) Bank Deposit transfers — where the correct action was to send a Payment Confirmation — in how many was it done right? Only calls the agent receives count; those resolved by the virtual assistant alone are excluded. For voice, "done right" = the system alerted the agent (trigger) <strong>and</strong> the agent selected the correct reason. The macro doesn't count here because in voice the confirmation is sent via FX Client, not Zendesk.</span>
   </div>
 </div>
 
@@ -196,6 +211,38 @@ body{{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:v
   <div class="explain">
     <span data-es>Cada barra es más corta que la anterior: ahí se pierde la adherencia. De {n} llamadas donde debía mandarse la confirmación, el sistema avisó en {trig} y solo en {adh} el agente además marcó el motivo correcto.</span>
     <span data-en>Each bar is shorter than the one above: that's where adherence is lost. Of {n} calls where the confirmation should have been sent, the system alerted on {trig} and in only {adh} did the agent also set the correct reason.</span>
+  </div>
+</div>
+
+<!-- COBERTURA DEL TRIGGER POR TIPO DE LLAMADA -->
+<div class="sec-title" data-es>Dónde falta el aviso del sistema — por tipo de llamada</div>
+<div class="sec-title" data-en>Where the system alert is missing — by call type</div>
+<div class="card">
+  <div class="sub" data-es>Una llamada llega al agente de dos formas: directa, o transferida por el asistente virtual. El trigger debería avisar en ambas — pero hoy casi no dispara en las transferidas.</div>
+  <div class="sub" data-en>A call reaches the agent two ways: direct, or transferred by the virtual assistant. The trigger should alert in both — but today it barely fires on transferred ones.</div>
+  <table>
+    <thead><tr>
+      <th data-es>Tipo de llamada</th><th data-en>Call type</th>
+      <th data-es>Llamadas</th><th data-en>Calls</th>
+      <th data-es>Con aviso (trigger)</th><th data-en>With alert (trigger)</th>
+      <th data-es>Cobertura</th><th data-en>Coverage</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><strong data-es>Directa al agente</strong><strong data-en>Direct to agent</strong></td>
+        <td>{ct['directa']['n']}</td><td>{ct['directa']['trig']}</td>
+        <td><span style="font-weight:700;color:{'#5A8A6A' if ct_pct['directa']>=30 else '#C07820' if ct_pct['directa']>=10 else '#B84A4A'}">{ct_pct['directa']}%</span></td>
+      </tr>
+      <tr>
+        <td><strong data-es>Transferida del asistente virtual</strong><strong data-en>Transferred from virtual assistant</strong></td>
+        <td>{ct['transferida']['n']}</td><td>{ct['transferida']['trig']}</td>
+        <td><span style="font-weight:700;color:{'#5A8A6A' if ct_pct['transferida']>=30 else '#C07820' if ct_pct['transferida']>=10 else '#B84A4A'}">{ct_pct['transferida']}%</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="explain">
+    <span data-es><strong>El scope que hay que atacar:</strong> el trigger funciona razonablemente en las llamadas directas ({ct_pct['directa']}%) pero casi no dispara en las transferidas del asistente virtual ({ct_pct['transferida']}%). Como muchas llamadas llegan al agente por transferencia, ahí se pierde gran parte del sample. <strong>Acción:</strong> extender el trigger para que también avise en el flujo de transferencia (VA → agente).</span>
+    <span data-en><strong>The scope to attack:</strong> the trigger works reasonably on direct calls ({ct_pct['directa']}%) but barely fires on calls transferred from the virtual assistant ({ct_pct['transferida']}%). Since many calls reach the agent via transfer, that's where much of the sample is lost. <strong>Action:</strong> extend the trigger to also fire on the transfer flow (VA → agent).</span>
   </div>
 </div>
 

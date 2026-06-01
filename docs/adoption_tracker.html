@@ -52,8 +52,8 @@ body{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:va
     <div class="sub">Ria Money Transfer · Care Operations</div>
     <h1 data-es>Adopción de Payment Confirmation</h1>
     <h1 data-en>Payment Confirmation Adoption</h1>
-    <div class="sub" data-es>Bank Deposit · Voz directa · últimos 15 días (hasta 2026-06-01)</div>
-    <div class="sub" data-en>Bank Deposit · Direct voice · last 15 days (through 2026-06-01)</div>
+    <div class="sub" data-es>Bank Deposit · llamadas atendidas por agente · últimos 15 días (hasta 2026-06-01)</div>
+    <div class="sub" data-en>Bank Deposit · agent-handled calls · last 15 days (through 2026-06-01)</div>
   </div>
   <div><button class="lang-btn" onclick="document.body.classList.toggle('en');this.textContent=document.body.classList.contains('en')?'ES':'EN'">EN</button></div>
 </div>
@@ -71,20 +71,20 @@ body{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:va
 
 <div class="card" style="margin-top:24px">
   <div class="explain" style="margin-top:0">
-    <span data-es><strong>Qué mide esta página:</strong> de todas las llamadas de voz directa sobre transferencias Bank Deposit ya pagadas y recientes (&lt;48h) — es decir, donde la acción correcta era enviar una Payment Confirmation — ¿en cuántas se hizo bien? Para voz, "bien hecho" = el sistema avisó al agente (trigger) <strong>y</strong> el agente marcó el motivo correcto. La macro no cuenta aquí porque en voz la confirmación se envía por FX Client, no por Zendesk.</span>
-    <span data-en><strong>What this page measures:</strong> of all direct-voice calls about already-paid, recent (&lt;48h) Bank Deposit transfers — i.e. where the correct action was to send a Payment Confirmation — in how many was it done right? For voice, "done right" = the system alerted the agent (trigger) <strong>and</strong> the agent selected the correct reason. The macro doesn't count here because in voice the confirmation is sent via FX Client, not Zendesk.</span>
+    <span data-es><strong>Qué mide esta página:</strong> de todas las llamadas de voz que <strong>atendió un agente</strong> (directas + transferidas del asistente virtual) sobre transferencias Bank Deposit ya pagadas y recientes (&lt;48h) — donde la acción correcta era enviar una Payment Confirmation — ¿en cuántas se hizo bien? Solo cuentan las llamadas que el agente recibe; las resueltas solo por el asistente virtual se excluyen. Para voz, "bien hecho" = el sistema avisó al agente (trigger) <strong>y</strong> el agente marcó el motivo correcto. La macro no cuenta aquí porque en voz la confirmación se envía por FX Client, no por Zendesk.</span>
+    <span data-en><strong>What this page measures:</strong> of all voice calls <strong>handled by an agent</strong> (direct + transferred from the virtual assistant) about already-paid, recent (&lt;48h) Bank Deposit transfers — where the correct action was to send a Payment Confirmation — in how many was it done right? Only calls the agent receives count; those resolved by the virtual assistant alone are excluded. For voice, "done right" = the system alerted the agent (trigger) <strong>and</strong> the agent selected the correct reason. The macro doesn't count here because in voice the confirmation is sent via FX Client, not Zendesk.</span>
   </div>
 </div>
 
 <!-- KPIs -->
 <div class="kpi-grid">
-  <div class="kpi clay"><div class="val">92</div>
+  <div class="kpi clay"><div class="val">163</div>
     <div class="lbl" data-es>Escenarios donde debía aplicarse PC</div>
     <div class="lbl" data-en>Scenarios where PC should apply</div></div>
   <div class="kpi clay"><div class="val">3</div>
     <div class="lbl" data-es>Hechos correctamente</div>
     <div class="lbl" data-en>Done correctly</div></div>
-  <div class="kpi red"><div class="val">3%</div>
+  <div class="kpi red"><div class="val">2%</div>
     <div class="lbl" data-es>Adherencia</div>
     <div class="lbl" data-en>Adherence</div></div>
 </div>
@@ -97,31 +97,63 @@ body{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:va
     <div class="fstep">
       <div class="fmeta"><div class="ftitle" data-es>Escenarios elegibles</div><div class="ftitle" data-en>Eligible scenarios</div>
         <div class="fnote" data-es>Bank Deposit pagado &lt;48h, voz directa</div><div class="fnote" data-en>Paid Bank Deposit &lt;48h, direct voice</div></div>
-      <div class="fbar-wrap"><div class="fbar" style="width:100%;background:var(--slate)">92</div></div>
+      <div class="fbar-wrap"><div class="fbar" style="width:100%;background:var(--slate)">163</div></div>
       <div class="fnum">100%</div>
     </div>
     <div class="fstep">
       <div class="fmeta"><div class="ftitle" data-es>1· El sistema avisó</div><div class="ftitle" data-en>1· System alerted</div>
         <div class="fnote" data-es>trigger nota interna</div><div class="fnote" data-en>internal-note trigger</div></div>
-      <div class="fbar-wrap"><div class="fbar" style="width:24%;background:var(--orange)">22</div></div>
-      <div class="fnum">24%</div>
+      <div class="fbar-wrap"><div class="fbar" style="width:13%;background:var(--orange)">22</div></div>
+      <div class="fnum">13%</div>
     </div>
     <div class="fstep">
       <div class="fmeta"><div class="ftitle" data-es>2· El agente marcó el motivo</div><div class="ftitle" data-en>2· Agent set the reason</div>
         <div class="fnote" data-es>RFC = Payment Confirmation</div><div class="fnote" data-en>RFC = Payment Confirmation</div></div>
-      <div class="fbar-wrap"><div class="fbar" style="width:5%;background:var(--red)">3</div></div>
-      <div class="fnum">3%</div>
+      <div class="fbar-wrap"><div class="fbar" style="width:5%;background:var(--red)">6</div></div>
+      <div class="fnum">4%</div>
     </div>
     <div class="fstep">
       <div class="fmeta"><div class="ftitle" data-es>✅ Adherente (1 + 2)</div><div class="ftitle" data-en>✅ Adherent (1 + 2)</div>
         <div class="fnote" data-es>las dos condiciones</div><div class="fnote" data-en>both conditions</div></div>
       <div class="fbar-wrap"><div class="fbar" style="width:5%;background:var(--green)">3</div></div>
-      <div class="fnum">3%</div>
+      <div class="fnum">2%</div>
     </div>
   </div>
   <div class="explain">
-    <span data-es>Cada barra es más corta que la anterior: ahí se pierde la adherencia. De 92 llamadas donde debía mandarse la confirmación, el sistema avisó en 22 y solo en 3 el agente además marcó el motivo correcto.</span>
-    <span data-en>Each bar is shorter than the one above: that's where adherence is lost. Of 92 calls where the confirmation should have been sent, the system alerted on 22 and in only 3 did the agent also set the correct reason.</span>
+    <span data-es>Cada barra es más corta que la anterior: ahí se pierde la adherencia. De 163 llamadas donde debía mandarse la confirmación, el sistema avisó en 22 y solo en 3 el agente además marcó el motivo correcto.</span>
+    <span data-en>Each bar is shorter than the one above: that's where adherence is lost. Of 163 calls where the confirmation should have been sent, the system alerted on 22 and in only 3 did the agent also set the correct reason.</span>
+  </div>
+</div>
+
+<!-- COBERTURA DEL TRIGGER POR TIPO DE LLAMADA -->
+<div class="sec-title" data-es>Dónde falta el aviso del sistema — por tipo de llamada</div>
+<div class="sec-title" data-en>Where the system alert is missing — by call type</div>
+<div class="card">
+  <div class="sub" data-es>Una llamada llega al agente de dos formas: directa, o transferida por el asistente virtual. El trigger debería avisar en ambas — pero hoy casi no dispara en las transferidas.</div>
+  <div class="sub" data-en>A call reaches the agent two ways: direct, or transferred by the virtual assistant. The trigger should alert in both — but today it barely fires on transferred ones.</div>
+  <table>
+    <thead><tr>
+      <th data-es>Tipo de llamada</th><th data-en>Call type</th>
+      <th data-es>Llamadas</th><th data-en>Calls</th>
+      <th data-es>Con aviso (trigger)</th><th data-en>With alert (trigger)</th>
+      <th data-es>Cobertura</th><th data-en>Coverage</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><strong data-es>Directa al agente</strong><strong data-en>Direct to agent</strong></td>
+        <td>92</td><td>22</td>
+        <td><span style="font-weight:700;color:#C07820">24%</span></td>
+      </tr>
+      <tr>
+        <td><strong data-es>Transferida del asistente virtual</strong><strong data-en>Transferred from virtual assistant</strong></td>
+        <td>71</td><td>0</td>
+        <td><span style="font-weight:700;color:#B84A4A">0%</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="explain">
+    <span data-es><strong>El scope que hay que atacar:</strong> el trigger funciona razonablemente en las llamadas directas (24%) pero casi no dispara en las transferidas del asistente virtual (0%). Como muchas llamadas llegan al agente por transferencia, ahí se pierde gran parte del sample. <strong>Acción:</strong> extender el trigger para que también avise en el flujo de transferencia (VA → agente).</span>
+    <span data-en><strong>The scope to attack:</strong> the trigger works reasonably on direct calls (24%) but barely fires on calls transferred from the virtual assistant (0%). Since many calls reach the agent via transfer, that's where much of the sample is lost. <strong>Action:</strong> extend the trigger to also fire on the transfer flow (VA → agent).</span>
   </div>
 </div>
 
@@ -133,9 +165,9 @@ body{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:va
     <div class="bottleneck">
       <div class="bt" data-es>Cuello 1 — Cobertura del sistema</div>
       <div class="bt" data-en>Bottleneck 1 — System coverage</div>
-      <div class="bn">24%</div>
-      <div class="bd" data-es>El trigger solo avisó en 22 de 92 llamadas. En el resto, el agente nunca recibió la alerta. <strong>Solución:</strong> activar el trigger para todos los grupos (en rollout). El techo de adherencia no puede superar este número.</div>
-      <div class="bd" data-en>The trigger only alerted on 22 of 92 calls. In the rest, the agent never got the alert. <strong>Fix:</strong> activate the trigger for all groups (in rollout). Adherence can't exceed this number.</div>
+      <div class="bn">13%</div>
+      <div class="bd" data-es>El trigger solo avisó en 22 de 163 llamadas. En el resto, el agente nunca recibió la alerta. <strong>Solución:</strong> activar el trigger para todos los grupos (en rollout). El techo de adherencia no puede superar este número.</div>
+      <div class="bd" data-en>The trigger only alerted on 22 of 163 calls. In the rest, the agent never got the alert. <strong>Fix:</strong> activate the trigger for all groups (in rollout). Adherence can't exceed this number.</div>
     </div>
   </div>
   <div class="card">
@@ -166,11 +198,11 @@ body{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:va
 </div>
 
 <script>
-const days=["2026-05-25", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01"];
-const dayN=[1, 1, 29, 23, 38];
-const dayAdh=[1, 1, 0, 0, 1];
-const dayTrig=[1, 1, 6, 10, 4];
-const dayPct=[100.0, 100.0, 0.0, 0.0, 2.6];
+const days=["2026-05-20", "2026-05-25", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01"];
+const dayN=[1, 2, 1, 1, 37, 47, 74];
+const dayAdh=[0, 1, 0, 1, 0, 0, 1];
+const dayTrig=[0, 1, 0, 1, 6, 10, 4];
+const dayPct=[0.0, 50.0, 0.0, 100.0, 0.0, 0.0, 1.4];
 const GREEN='#5A8A6A',ORANGE='#C07820',RED='#B84A4A',CLAY='#CC785C';
 
 new Chart(document.getElementById('chartDaily'),{
