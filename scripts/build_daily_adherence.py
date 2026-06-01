@@ -1,21 +1,19 @@
 """
 Genera reports/daily_adherence.html — dashboard de adherencia diaria F1
-enfocado en US Care. Muestra tendencia día a día para monitorear adopción.
+con filtros interactivos y explicaciones en cada gráfico.
 
-Usage:
-    python -m scripts.build_daily_adherence
+Usage: python -m scripts.build_daily_adherence
 """
-import csv
-import json
+import csv, json
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 
-# ── Tags ─────────────────────────────────────────────────────────────────────
 MACRO_TAG   = "ria_payment_confirmation_reliable_correspondent_sent"
 RFC_TAG     = "order__payment_confirmation"
 VA_ONLY     = {"inbound_call_-_va_only", "va_only_solved"}
-US_WFM      = {"ria_wfm_us_phone", "cxi_ria_wfm_nam_care_phone", "ria_wfm_nam_care_phone"}
+US_WFM      = {"ria_wfm_us_phone", "cxi_ria_wfm_nam_care_phone"}
+EMEA_WFM    = {"ria_wfm_europe_es_uk_phone", "cxi_ria_wfm_emea_care_phone"}
 
 def classify(r):
     ok_48  = r["cond_48h"] == "True"
@@ -30,71 +28,41 @@ def classify(r):
     return "FX"
 
 def get_channel(tags):
-    if tags & VA_ONLY:                              return "va_only"
+    if tags & VA_ONLY:                                      return "va_only"
     if tags & {"inbound_call_-_va_to_rep","cxi_ch_voice"}: return "voice_rep"
-    if "inbound_call" in tags:                      return "voice_direct"
-    if tags & {"native_messaging","live_chat_-_message"}: return "messaging"
-    if "email_ticket_channel" in tags:              return "email"
+    if "inbound_call" in tags:                              return "voice_direct"
+    if tags & {"native_messaging","live_chat_-_message"}:   return "messaging"
+    if "email_ticket_channel" in tags:                      return "email"
     return "other"
 
-def is_adherent(tags, channel):
-    if channel == "va_only": return None  # excluir
-    return bool(tags & {MACRO_TAG, RFC_TAG})
+def get_group(tags):
+    if tags & US_WFM:   return "us_care"
+    if tags & EMEA_WFM: return "emea_care"
+    return "other"
 
-# ── Leer datos ────────────────────────────────────────────────────────────────
 rows = list(csv.DictReader(open("reports/macro_adherence_report.csv", encoding="utf-8")))
 f1_all = [r for r in rows if classify(r) == "F1"]
 
-# ── Parsear fecha y canal ─────────────────────────────────────────────────────
+# ── Construir lista de tickets para JS ────────────────────────────────────────
+tickets_js = []
 for r in f1_all:
-    tags = set(r.get("tags","").split("|"))
-    r["_tags"]    = tags
-    r["_channel"] = get_channel(tags)
-    r["_us_care"] = bool(tags & US_WFM)
-    r["_adherent"]= is_adherent(tags, r["_channel"])
-    try:
-        r["_date"] = r["created_at"][:10]  # YYYY-MM-DD
-    except Exception:
-        r["_date"] = None
-
-# ── Conjuntos ─────────────────────────────────────────────────────────────────
-f1_measurable = [r for r in f1_all if r["_adherent"] is not None]
-f1_us         = [r for r in f1_measurable if r["_us_care"]]
-f1_global     = f1_measurable
-
-# ── Agregado diario ───────────────────────────────────────────────────────────
-def daily_agg(bucket):
-    by_day = defaultdict(lambda: {"n": 0, "adh": 0})
-    for r in bucket:
-        d = r["_date"]
-        if not d: continue
-        by_day[d]["n"]   += 1
-        by_day[d]["adh"] += int(bool(r["_adherent"]))
-    days = sorted(by_day.keys())
-    return days, [by_day[d]["n"] for d in days], [by_day[d]["adh"] for d in days], \
-           [round(by_day[d]["adh"]/by_day[d]["n"]*100,1) if by_day[d]["n"] else 0 for d in days]
-
-days_us,    n_us,    adh_us,    pct_us    = daily_agg(f1_us)
-days_gl,    n_gl,    adh_gl,    pct_gl    = daily_agg(f1_global)
-
-# ── Canal breakdown ───────────────────────────────────────────────────────────
-ch_data = defaultdict(lambda: {"n":0,"adh":0})
-for r in f1_measurable:
-    ch_data[r["_channel"]]["n"]   += 1
-    ch_data[r["_channel"]]["adh"] += int(bool(r["_adherent"]))
-
-# ── KPIs ──────────────────────────────────────────────────────────────────────
-tot_us   = len(f1_us)
-adh_us_n = sum(1 for r in f1_us if r["_adherent"])
-pct_us_kpi = round(adh_us_n/tot_us*100,1) if tot_us else 0
-
-tot_gl   = len(f1_global)
-adh_gl_n = sum(1 for r in f1_global if r["_adherent"])
-pct_gl_kpi = round(adh_gl_n/tot_gl*100,1) if tot_gl else 0
+    tags    = set(r.get("tags","").split("|"))
+    ch      = get_channel(tags)
+    grp     = get_group(tags)
+    adh     = None if ch == "va_only" else bool(tags & {MACRO_TAG, RFC_TAG})
+    dm      = r.get("delivery_method", "bank_deposit")
+    dt      = r.get("created_at","")[:10]
+    tickets_js.append({
+        "date": dt, "channel": ch, "group": grp,
+        "dm": dm, "adherent": adh,
+        "has_macro":   MACRO_TAG in tags,
+        "has_rfc":     RFC_TAG in tags,
+        "has_trigger": "payment_confirmation_advisory_applied" in tags,
+    })
 
 TODAY = date.today().strftime("%d %b %Y")
+TICKETS_JSON = json.dumps(tickets_js)
 
-# ── HTML ──────────────────────────────────────────────────────────────────────
 html = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -104,320 +72,544 @@ html = f"""<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{{
-  --paper:#F5F4EE;--ink:#1F1D1B;--clay:#CC785C;--clay-dark:#A1543D;
-  --sand:#EBE5D7;--slate:#6A8CAA;--border:rgba(20,20,19,0.10);
+  --paper:#F5F4EE;--ink:#1F1D1B;--clay:#CC785C;--clay-dk:#A1543D;
+  --sand:#EBE5D7;--slate:#6A8CAA;--border:rgba(20,20,19,.10);
   --green:#5A8A6A;--red:#B84A4A;--orange:#C07820;
 }}
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:Inter,-apple-system,sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5}}
+
 .header{{background:var(--ink);color:var(--paper);padding:28px 48px;display:flex;justify-content:space-between;align-items:flex-end}}
 .header h1{{font-size:20px;font-weight:600}}
-.header .sub{{font-size:12px;opacity:.6;margin-top:4px}}
-.lang-btn{{background:transparent;border:1px solid rgba(245,244,238,.3);color:var(--paper);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px}}
-.page{{max-width:1100px;margin:0 auto;padding:28px 24px 60px}}
-.sec-title{{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--clay);margin-bottom:14px}}
-.section{{margin-bottom:36px}}
-.kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}}
-.kpi{{background:#fff;border:1px solid var(--border);border-radius:8px;padding:18px}}
+.header .sub{{font-size:12px;opacity:.6;margin-top:3px}}
+.lang-btn{{background:transparent;border:1px solid rgba(255,255,255,.3);color:var(--paper);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-top:8px}}
+
+.page{{max-width:1140px;margin:0 auto;padding:28px 24px 80px}}
+.sec-title{{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--clay);margin-bottom:12px;margin-top:32px}}
+
+/* ── Filtros ── */
+.filters{{background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px 20px;display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;margin-bottom:20px}}
+.filter-group label{{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:5px}}
+.filter-group select{{border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:13px;background:#fff;color:var(--ink);cursor:pointer;min-width:160px}}
+.filter-group select:focus{{outline:2px solid var(--clay);outline-offset:1px}}
+.filter-note{{font-size:12px;color:#999;align-self:flex-end;padding-bottom:2px}}
+
+/* ── KPIs ── */
+.kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}}
+.kpi{{background:#fff;border:1px solid var(--border);border-radius:8px;padding:18px 20px}}
 .kpi .val{{font-size:30px;font-weight:700;line-height:1}}
 .kpi .lbl{{font-size:12px;color:#777;margin-top:5px}}
+.kpi .sublbl{{font-size:11px;color:#aaa;margin-top:2px}}
 .kpi.red .val{{color:var(--red)}}
 .kpi.clay .val{{color:var(--clay)}}
 .kpi.green .val{{color:var(--green)}}
+
+/* ── Cards ── */
 .card{{background:#fff;border:1px solid var(--border);border-radius:8px;padding:22px;margin-bottom:14px}}
-.card h3{{font-size:14px;font-weight:600;margin-bottom:14px}}
-.note{{background:var(--sand);border-radius:6px;padding:12px 14px;font-size:13px;margin-top:14px;line-height:1.6}}
+.card-header{{margin-bottom:4px}}
+.card-header h3{{font-size:15px;font-weight:600}}
+.card-header .card-sub{{font-size:12px;color:#888;margin-top:3px;margin-bottom:14px}}
+.chart-wrap{{position:relative;height:250px}}
+.chart-wrap.tall{{height:300px}}
+
+.explain{{background:var(--sand);border-radius:6px;padding:13px 16px;font-size:13px;margin-top:16px;line-height:1.65}}
+.explain strong{{color:var(--clay-dk)}}
+.explain .tip{{display:block;margin-top:6px;font-size:12px;color:#666}}
+
+/* ── Dos columnas ── */
 .two{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
-.chart-wrap{{position:relative;height:240px}}
+
+/* ── Tabla ── */
 table{{width:100%;border-collapse:collapse;font-size:13px}}
-th{{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:#888;border-bottom:2px solid var(--border);padding:7px 10px;text-align:left}}
+th{{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:#888;border-bottom:2px solid var(--border);padding:8px 10px;text-align:left}}
 td{{padding:9px 10px;border-bottom:1px solid var(--border)}}
 tr:last-child td{{border-bottom:none}}
-.badge{{display:inline-block;padding:2px 7px;border-radius:10px;font-weight:600;font-size:12px}}
+.badge{{display:inline-block;padding:2px 8px;border-radius:10px;font-weight:600;font-size:12px}}
 .b-red{{background:#FDE8E8;color:var(--red)}}
 .b-mid{{background:#FFF3E0;color:var(--orange)}}
-.b-green{{background:#E8F5E9;color:var(--green)}}
-.pill{{display:inline-block;background:var(--sand);border-radius:4px;padding:2px 8px;font-size:11px;font-family:monospace}}
-/* lang */
+.b-grn{{background:#E8F5E9;color:var(--green)}}
+.pill{{display:inline-block;background:#eee;border-radius:3px;padding:1px 6px;font-size:11px;font-family:monospace;color:#333}}
+
+/* ── Lang ── */
 [data-en]{{display:none}}
 body.en [data-es]{{display:none}}
 body.en [data-en]{{display:unset}}
+
+/* ── No data msg ── */
+.no-data{{text-align:center;padding:40px;color:#aaa;font-size:13px}}
 </style>
 </head>
 <body>
+
 <div class="header">
   <div>
     <div class="sub">Ria Money Transfer · Care Operations</div>
     <h1 data-es>Adherencia Diaria — Payment Confirmation (F1)</h1>
     <h1 data-en>Daily Adherence — Payment Confirmation (F1)</h1>
-    <div class="sub" data-es>Últimos 30 días · {TODAY} · Enfoque: US Care</div>
-    <div class="sub" data-en>Last 30 days · {TODAY} · Focus: US Care</div>
+    <div class="sub" data-es>Últimos 30 días · Actualizado {TODAY}</div>
+    <div class="sub" data-en>Last 30 days · Updated {TODAY}</div>
   </div>
-  <div><button class="lang-btn" onclick="document.body.classList.toggle('en');this.textContent=document.body.classList.contains('en')?'ES':'EN'">EN</button></div>
+  <div>
+    <button class="lang-btn" onclick="document.body.classList.toggle('en');this.textContent=document.body.classList.contains('en')?'ES':'EN'">EN</button>
+  </div>
 </div>
 
 <div class="page">
 
+<!-- FILTROS -->
+<div class="sec-title" data-es>Filtros</div>
+<div class="sec-title" data-en>Filters</div>
+<div class="filters">
+  <div class="filter-group">
+    <label data-es>Grupo de agentes</label>
+    <label data-en>Agent group</label>
+    <select id="fGroup" onchange="refresh()">
+      <option value="all" data-es>Todos los grupos</option>
+      <option value="all" data-en>All groups</option>
+      <option value="us_care">US Care</option>
+      <option value="emea_care">EMEA Care</option>
+      <option value="other" data-es>Otros grupos</option>
+      <option value="other" data-en>Other groups</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label data-es>Canal de contacto</label>
+    <label data-en>Contact channel</label>
+    <select id="fChannel" onchange="refresh()">
+      <option value="all" data-es>Todos los canales</option>
+      <option value="all" data-en>All channels</option>
+      <option value="voice_direct" data-es>Voz directa (rep)</option>
+      <option value="voice_direct" data-en>Direct voice (rep)</option>
+      <option value="voice_rep" data-es>Voz vía CXI/Sierra</option>
+      <option value="voice_rep" data-en>Voice via CXI/Sierra</option>
+      <option value="email">Email</option>
+      <option value="messaging">Messaging / Chat</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label data-es>Delivery Method</label>
+    <label data-en>Delivery Method</label>
+    <select id="fDM" onchange="refresh()">
+      <option value="all" data-es>Todos</option>
+      <option value="all" data-en>All</option>
+      <option value="bank_deposit">Bank Deposit</option>
+      <option value="office_pick-up">Office Pick-Up</option>
+      <option value="mobile_payment">Mobile Payment</option>
+      <option value="home_delivery">Home Delivery</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label data-es>Período</label>
+    <label data-en>Period</label>
+    <select id="fDays" onchange="refresh()">
+      <option value="30" data-es>Últimos 30 días</option>
+      <option value="30" data-en>Last 30 days</option>
+      <option value="14" data-es>Últimos 14 días</option>
+      <option value="14" data-en>Last 14 days</option>
+      <option value="7" data-es>Últimos 7 días</option>
+      <option value="7" data-en>Last 7 days</option>
+    </select>
+  </div>
+  <div class="filter-note" data-es>* Tickets VA-only excluidos siempre (sin rep humano)</div>
+  <div class="filter-note" data-en>* VA-only tickets always excluded (no human rep)</div>
+</div>
+
 <!-- KPIs -->
-<div class="section">
-  <div class="sec-title" data-es>Resumen — Últimos 30 días</div>
-  <div class="sec-title" data-en>Summary — Last 30 days</div>
-  <div class="kpi-grid">
-    <div class="kpi clay">
-      <div class="val">{tot_us}</div>
-      <div class="lbl" data-es>Tickets F1 US Care</div>
-      <div class="lbl" data-en>F1 Tickets US Care</div>
-    </div>
-    <div class="kpi red">
-      <div class="val">{pct_us_kpi}%</div>
-      <div class="lbl" data-es>Adherencia US Care</div>
-      <div class="lbl" data-en>US Care Adherence</div>
-    </div>
-    <div class="kpi clay">
-      <div class="val">{tot_gl}</div>
-      <div class="lbl" data-es>Tickets F1 Global (sin VA-only)</div>
-      <div class="lbl" data-en>F1 Tickets Global (excl. VA-only)</div>
-    </div>
-    <div class="kpi red">
-      <div class="val">{pct_gl_kpi}%</div>
-      <div class="lbl" data-es>Adherencia Global</div>
-      <div class="lbl" data-en>Global Adherence</div>
-    </div>
+<div class="sec-title" data-es>Resumen del período seleccionado</div>
+<div class="sec-title" data-en>Summary for selected period</div>
+<div class="kpi-grid">
+  <div class="kpi clay">
+    <div class="val" id="kpiTotal">—</div>
+    <div class="lbl" data-es>Tickets F1 elegibles</div>
+    <div class="lbl" data-en>Eligible F1 tickets</div>
+    <div class="sublbl" data-es>Con rep humano, excluyendo VA-only</div>
+    <div class="sublbl" data-en>With human rep, excluding VA-only</div>
   </div>
+  <div class="kpi red">
+    <div class="val" id="kpiAdh">—</div>
+    <div class="lbl" data-es>Adherencia</div>
+    <div class="lbl" data-en>Adherence</div>
+    <div class="sublbl" data-es>Tickets con acción correcta / total</div>
+    <div class="sublbl" data-en>Tickets with correct action / total</div>
+  </div>
+  <div class="kpi red">
+    <div class="val" id="kpiGap">—</div>
+    <div class="lbl" data-es>Tickets sin acción (GAP)</div>
+    <div class="lbl" data-en>Tickets without action (GAP)</div>
+    <div class="sublbl" data-es>Oportunidad de mejora</div>
+    <div class="sublbl" data-en>Improvement opportunity</div>
+  </div>
+  <div class="kpi clay">
+    <div class="val" id="kpiTrend">—</div>
+    <div class="lbl" data-es>Tendencia (últimos 7 vs anteriores 7 días)</div>
+    <div class="lbl" data-en>Trend (last 7 vs previous 7 days)</div>
+    <div class="sublbl" data-es>↑ mejora · ↓ baja · = sin cambio</div>
+    <div class="sublbl" data-en>↑ improving · ↓ declining · = no change</div>
+  </div>
+</div>
 
-  <div class="card" style="margin-top:14px">
-    <div class="note">
-      <span data-es><strong>Definición de adherencia:</strong> un ticket F1 es adherente si tiene el tag
-        <span class="pill">ria_payment_confirmation_reliable_correspondent_sent</span> (macro/quicktext aplicado)
-        <strong>o</strong> <span class="pill">order__payment_confirmation</span> (reason for contact correcto).
-        Los tickets VA-only (<span class="pill">inbound_call_-_va_only</span>) se excluyen del cálculo.
+<!-- CHART 1: Tendencia % diario -->
+<div class="sec-title" data-es>¿Está mejorando la adherencia?</div>
+<div class="sec-title" data-en>Is adherence improving?</div>
+<div class="card">
+  <div class="card-header">
+    <h3 data-es>% de Adherencia por Día</h3>
+    <h3 data-en>Daily Adherence %</h3>
+    <div class="card-sub" data-es>Cada punto = un día. Muestra si los agentes están aplicando Payment Confirmation con más frecuencia con el paso del tiempo.</div>
+    <div class="card-sub" data-en>Each point = one day. Shows whether agents are applying Payment Confirmation more frequently over time.</div>
+  </div>
+  <div class="chart-wrap tall"><canvas id="chartPct"></canvas></div>
+  <div class="explain">
+    <span data-es>
+      <strong>Qué buscar:</strong> una tendencia ascendente en esta línea indica que el entrenamiento o la activación de triggers está funcionando.
+      Si la línea permanece cerca de 0%, los agentes aún no están aplicando la macro ni seleccionando el motivo de contacto correcto.
+      <span class="tip">💡 Un pico aislado en un día no indica mejora — busca una tendencia sostenida de al menos 3-5 días consecutivos subiendo.</span>
+    </span>
+    <span data-en>
+      <strong>What to look for:</strong> an upward trend in this line indicates training or trigger activation is working.
+      If the line stays near 0%, agents are still not applying the macro or selecting the correct contact reason.
+      <span class="tip">💡 An isolated spike on one day doesn't indicate improvement — look for a sustained trend of at least 3-5 consecutive days rising.</span>
+    </span>
+  </div>
+</div>
+
+<!-- CHART 2+3: Volumen por día -->
+<div class="sec-title" data-es>¿Cuántos tickets hay y cuántos reciben la acción correcta?</div>
+<div class="sec-title" data-en>How many tickets exist and how many receive the correct action?</div>
+<div class="two">
+  <div class="card">
+    <div class="card-header">
+      <h3 data-es>Tickets por Día — Adherentes vs GAP</h3>
+      <h3 data-en>Tickets per Day — Adherent vs GAP</h3>
+      <div class="card-sub" data-es>Verde = recibió Payment Confirmation. Salmón = no la recibió (oportunidad perdida).</div>
+      <div class="card-sub" data-en>Green = received Payment Confirmation. Salmon = did not receive it (missed opportunity).</div>
+    </div>
+    <div class="chart-wrap"><canvas id="chartVol"></canvas></div>
+    <div class="explain">
+      <span data-es>
+        <strong>GAP (salmón)</strong> = clientes que deberían haber recibido confirmación de pago pero no la recibieron.
+        Cada barra salmón representa una oportunidad donde el agente no siguió el proceso correcto.
+        <span class="tip">💡 El volumen alto de salmón no es una falla del sistema — es la brecha de proceso que este dashboard está midiendo.</span>
       </span>
-      <span data-en><strong>Adherence definition:</strong> an F1 ticket is adherent if it has the tag
-        <span class="pill">ria_payment_confirmation_reliable_correspondent_sent</span> (macro/quicktext applied)
-        <strong>or</strong> <span class="pill">order__payment_confirmation</span> (correct reason for contact).
-        VA-only tickets (<span class="pill">inbound_call_-_va_only</span>) are excluded.
+      <span data-en>
+        <strong>GAP (salmon)</strong> = customers who should have received a payment confirmation but didn't.
+        Each salmon bar represents an opportunity where the agent didn't follow the correct process.
+        <span class="tip">💡 High salmon volume isn't a system failure — it's the process gap this dashboard is measuring.</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3 data-es>Desglose por Señal de Adherencia</h3>
+      <h3 data-en>Breakdown by Adherence Signal</h3>
+      <div class="card-sub" data-es>Qué tipo de evidencia indica que el agente tomó la acción correcta.</div>
+      <div class="card-sub" data-en>What type of evidence indicates the agent took the correct action.</div>
+    </div>
+    <div class="chart-wrap"><canvas id="chartSignal"></canvas></div>
+    <div class="explain">
+      <span data-es>
+        <strong>Macro/Quicktext</strong> (<span class="pill">ria_payment_confirmation_reliable_correspondent_sent</span>): el agente usó el shortcut en Zendesk — aplica a email y chat.<br>
+        <strong>RFC correcto</strong> (<span class="pill">order__payment_confirmation</span>): el agente seleccionó "Payment Confirmation" como motivo de contacto — aplica a todos los canales incluyendo voz.<br>
+        <strong>Trigger automático</strong> (<span class="pill">payment_confirmation_advisory_applied</span>): Zendesk envió la nota interna alertando al agente — aún en rollout.
+        <span class="tip">💡 Un ticket puede tener una o varias señales. Las tres juntas = proceso completo.</span>
+      </span>
+      <span data-en>
+        <strong>Macro/Quicktext</strong> (<span class="pill">ria_payment_confirmation_reliable_correspondent_sent</span>): agent used the Zendesk shortcut — applies to email and chat.<br>
+        <strong>Correct RFC</strong> (<span class="pill">order__payment_confirmation</span>): agent selected "Payment Confirmation" as contact reason — applies to all channels including voice.<br>
+        <strong>Auto trigger</strong> (<span class="pill">payment_confirmation_advisory_applied</span>): Zendesk sent the internal note alerting the agent — still in rollout.
+        <span class="tip">💡 A ticket can have one or more signals. All three together = complete process.</span>
       </span>
     </div>
   </div>
 </div>
 
-<!-- TENDENCIA DIARIA -->
-<div class="section">
-  <div class="sec-title" data-es>Tendencia Diaria — US Care vs Global</div>
-  <div class="sec-title" data-en>Daily Trend — US Care vs Global</div>
-  <div class="card">
-    <h3 data-es>% Adherencia por día (F1)</h3>
-    <h3 data-en>Daily Adherence % (F1)</h3>
-    <div class="chart-wrap" style="height:280px">
-      <canvas id="chartDaily"></canvas>
-    </div>
-    <div class="note">
-      <span data-es>La línea base está cerca de 0% — el objetivo del dashboard es capturar el momento en que la adopción empiece a subir conforme se entrena a los equipos y se activan los triggers. Cada punto = un día.</span>
-      <span data-en>The baseline is near 0% — the dashboard's purpose is to capture the moment adoption starts rising as teams are trained and triggers are activated. Each point = one day.</span>
-    </div>
+<!-- CHART 4: Por canal -->
+<div class="sec-title" data-es>¿En qué canal están fallando más?</div>
+<div class="sec-title" data-en>Which channel is underperforming?</div>
+<div class="card">
+  <div class="card-header">
+    <h3 data-es>Adherencia por Canal de Contacto</h3>
+    <h3 data-en>Adherence by Contact Channel</h3>
+    <div class="card-sub" data-es>Comparación de adherencia entre canales. Cada canal tiene una regla diferente: voz no requiere macro, solo RFC correcto.</div>
+    <div class="card-sub" data-en>Adherence comparison across channels. Each channel has a different rule: voice doesn't require macro, only correct RFC.</div>
   </div>
-
-  <div class="two">
-    <div class="card">
-      <h3 data-es>Tickets F1 por día — US Care</h3>
-      <h3 data-en>F1 Tickets per Day — US Care</h3>
-      <div class="chart-wrap">
-        <canvas id="chartVolUS"></canvas>
-      </div>
-    </div>
-    <div class="card">
-      <h3 data-es>Tickets F1 por día — Global</h3>
-      <h3 data-en>F1 Tickets per Day — Global</h3>
-      <div class="chart-wrap">
-        <canvas id="chartVolGL"></canvas>
-      </div>
-    </div>
+  <div class="chart-wrap"><canvas id="chartCh"></canvas></div>
+  <div class="explain">
+    <span data-es>
+      <strong>Voz directa</strong>: el rep lee el script y envía confirmación vía FX Client (no Zendesk). Adherente si seleccionó RFC = Payment Confirmation.<br>
+      <strong>Voz vía CXI/Sierra</strong>: llamada transferida del agente de IA al rep humano. Misma regla que voz directa.<br>
+      <strong>Email</strong>: requiere aplicar la macro o quicktext de Payment Confirmation.<br>
+      <strong>Messaging/Chat</strong>: requiere usar el shortcut de messaging equivalente.
+      <span class="tip">💡 Si voz está en 0% pero email tiene algo de adherencia, el problema es principalmente de entrenamiento en voz — el RFC no se está seleccionando.</span>
+    </span>
+    <span data-en>
+      <strong>Direct voice</strong>: rep reads script and sends confirmation via FX Client (not Zendesk). Adherent if RFC = Payment Confirmation was selected.<br>
+      <strong>Voice via CXI/Sierra</strong>: call transferred from AI agent to human rep. Same rule as direct voice.<br>
+      <strong>Email</strong>: requires applying the Payment Confirmation macro or quicktext.<br>
+      <strong>Messaging/Chat</strong>: requires using the equivalent messaging shortcut.
+      <span class="tip">💡 If voice is at 0% but email has some adherence, the problem is mainly voice training — RFC is not being selected.</span>
+    </span>
   </div>
 </div>
 
-<!-- CANAL BREAKDOWN -->
-<div class="section">
-  <div class="sec-title" data-es>Detalle por Canal (Global F1)</div>
-  <div class="sec-title" data-en>Breakdown by Channel (Global F1)</div>
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
-          <th data-es>Canal</th><th data-es>Tickets</th><th data-es>Adherentes</th><th data-es>GAP</th><th data-es>ADH%</th><th data-es>Nota</th>
-          <th data-en>Channel</th><th data-en>Tickets</th><th data-en>Adherent</th><th data-en>GAP</th><th data-en>ADH%</th><th data-en>Note</th>
-        </tr>
-      </thead>
-      <tbody>"""
-
-CH_LABEL = {
-    "voice_direct": "Voz directa",
-    "voice_rep":    "Voz (VA→Rep)",
-    "email":        "Email",
-    "messaging":    "Messaging/Chat",
-    "other":        "Otro/Desconocido",
-}
-CH_NOTE_ES = {
-    "voice_direct": "Rep lee script, envía por FX Client",
-    "voice_rep":    "VA transfiere al rep",
-    "email":        "Macro o quicktext vía Zendesk",
-    "messaging":    "Shortcut de messaging",
-    "other":        "Canal no identificado",
-}
-CH_NOTE_EN = {
-    "voice_direct": "Rep reads script, sends via FX Client",
-    "voice_rep":    "VA transfers to rep",
-    "email":        "Macro or quicktext via Zendesk",
-    "messaging":    "Messaging shortcut",
-    "other":        "Unidentified channel",
-}
-
-for ch, d in sorted(ch_data.items(), key=lambda x: -x[1]["n"]):
-    n   = d["n"]
-    a   = d["adh"]
-    g   = n - a
-    pct = round(a/n*100,1) if n else 0
-    bc  = "b-green" if pct>=30 else ("b-mid" if pct>=10 else "b-red")
-    lbl = CH_LABEL.get(ch, ch)
-    html += f"""
-        <tr>
-          <td><strong>{lbl}</strong></td>
-          <td>{n}</td><td>{a}</td><td>{g}</td>
-          <td><span class="badge {bc}">{pct}%</span></td>
-          <td style="color:#888;font-size:12px">
-            <span data-es>{CH_NOTE_ES.get(ch,'')}</span>
-            <span data-en>{CH_NOTE_EN.get(ch,'')}</span>
-          </td>
-        </tr>"""
-
-va_n = sum(1 for r in f1_all if r["_channel"]=="va_only")
-html += f"""
-        <tr style="opacity:.5">
-          <td>VA-only (excluido)</td>
-          <td>{va_n}</td><td>—</td><td>—</td><td>—</td>
-          <td style="color:#888;font-size:12px" data-es>Sin rep humano — no medible</td>
-          <td style="color:#888;font-size:12px" data-en>No human rep — not measurable</td>
-        </tr>
-      </tbody>
-    </table>
+<!-- TABLA DETALLE -->
+<div class="sec-title" data-es>Detalle por Delivery Method y Canal</div>
+<div class="sec-title" data-en>Detail by Delivery Method and Channel</div>
+<div class="card">
+  <div class="card-header">
+    <div class="card-sub" data-es>Combinación de cada delivery method con cada canal. Permite identificar exactamente dónde está el mayor GAP.</div>
+    <div class="card-sub" data-en>Combination of each delivery method with each channel. Helps identify exactly where the largest gap is.</div>
   </div>
+  <table id="detailTable">
+    <thead>
+      <tr>
+        <th data-es>Delivery Method</th><th data-en>Delivery Method</th>
+        <th data-es>Canal</th><th data-en>Channel</th>
+        <th data-es>Total</th><th data-en>Total</th>
+        <th data-es>Adherentes</th><th data-en>Adherent</th>
+        <th data-es>GAP</th><th data-en>GAP</th>
+        <th data-es>Adherencia</th><th data-en>Adherence</th>
+      </tr>
+    </thead>
+    <tbody id="detailBody"></tbody>
+  </table>
 </div>
 
-<!-- PRÓXIMOS PASOS -->
-<div class="section">
-  <div class="sec-title" data-es>Qué Monitorear</div>
-  <div class="sec-title" data-en>What to Monitor</div>
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
-          <th data-es>Hito</th><th data-es>Señal en Zendesk</th><th data-es>Impacto esperado</th>
-          <th data-en>Milestone</th><th data-en>Signal in Zendesk</th><th data-en>Expected impact</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td data-es>Trigger activo en US Care</td>
-          <td data-en>Trigger active in US Care</td>
-          <td><span class="pill">payment_confirmation_advisory_applied</span></td>
-          <td data-es>↑ adherencia voice_direct</td>
-          <td data-en>↑ voice_direct adherence</td>
-        </tr>
-        <tr>
-          <td data-es>Reps seleccionan RFC correcto</td>
-          <td data-en>Reps select correct RFC</td>
-          <td><span class="pill">order__payment_confirmation</span></td>
-          <td data-es>↑ adherencia voz y email</td>
-          <td data-en>↑ voice & email adherence</td>
-        </tr>
-        <tr>
-          <td data-es>Macro/quicktext usado en email</td>
-          <td data-en>Macro/quicktext used in email</td>
-          <td><span class="pill">ria_payment_confirmation_reliable_correspondent_sent</span></td>
-          <td data-es>↑ adherencia email (mayor volumen)</td>
-          <td data-en>↑ email adherence (highest volume)</td>
-        </tr>
-        <tr>
-          <td data-es>Trigger activo en todos los grupos</td>
-          <td data-en>Trigger active in all groups</td>
-          <td data-es>Sin cambio de tag — ver % global</td>
-          <td data-en>No tag change — see global %</td>
-          <td data-es>↑ adherencia global</td>
-          <td data-en>↑ global adherence</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-</div>
+</div><!-- /page -->
 
 <script>
-const CLAY='#CC785C', GREEN='#5A8A6A', SLATE='#6A8CAA', SAND='#EBE5D7';
+const ALL_TICKETS = {TICKETS_JSON};
 
-const daysUS  = {json.dumps(days_us)};
-const nUS     = {json.dumps(n_us)};
-const adhUS   = {json.dumps(adh_us)};
-const pctUS   = {json.dumps(pct_us)};
-
-const daysGL  = {json.dumps(days_gl)};
-const nGL     = {json.dumps(n_gl)};
-const adhGL   = {json.dumps(adh_gl)};
-const pctGL   = {json.dumps(pct_gl)};
-
-const baseOpts = {{
-  responsive:true, maintainAspectRatio:false,
-  plugins:{{legend:{{position:'bottom',labels:{{font:{{size:12}},boxWidth:12}}}},
-            tooltip:{{cornerRadius:4}}}},
-  scales:{{x:{{ticks:{{font:{{size:11}},maxRotation:45}},grid:{{display:false}}}},
-           y:{{grid:{{color:'#eee'}}}}}}
+const DM_LABEL = {{
+  'bank_deposit':'Bank Deposit','office_pick-up':'Office Pick-Up',
+  'mobile_payment':'Mobile Payment','home_delivery':'Home Delivery'
+}};
+const CH_LABEL_ES = {{
+  'voice_direct':'Voz directa','voice_rep':'Voz CXI/Sierra',
+  'email':'Email','messaging':'Messaging','other':'Otro'
+}};
+const CH_LABEL_EN = {{
+  'voice_direct':'Direct voice','voice_rep':'Voice CXI/Sierra',
+  'email':'Email','messaging':'Messaging','other':'Other'
 }};
 
-// Chart 1: % diario US Care vs Global
-new Chart(document.getElementById('chartDaily'),{{
-  type:'line',
-  data:{{
-    labels: daysGL,
-    datasets:[
-      {{label:'US Care %', data:pctUS.length?pctUS:Array(daysGL.length).fill(null),
-        borderColor:CLAY, backgroundColor:'rgba(204,120,92,.1)',
-        pointRadius:4, pointHoverRadius:6, tension:.3, fill:true}},
-      {{label:'Global %', data:pctGL,
-        borderColor:SLATE, backgroundColor:'rgba(106,140,170,.08)',
-        pointRadius:3, pointHoverRadius:5, tension:.3, fill:true,
-        borderDash:[4,3]}}
-    ]
-  }},
-  options:{{...baseOpts,
-    scales:{{...baseOpts.scales,
-      y:{{...baseOpts.scales.y, min:0, max:100,
-         ticks:{{callback:v=>v+'%'}}}}}}}}
-}});
+let charts = {{}};
 
-// Chart 2: Volumen diario US Care
-new Chart(document.getElementById('chartVolUS'),{{
-  type:'bar',
-  data:{{
-    labels:daysUS,
-    datasets:[
-      {{label:'Adherentes',data:adhUS,backgroundColor:GREEN,borderRadius:3}},
-      {{label:'GAP',data:nUS.map((n,i)=>n-adhUS[i]),backgroundColor:'#E8D0C4',borderRadius:3}}
-    ]
-  }},
-  options:{{...baseOpts,scales:{{x:{{...baseOpts.scales.x,stacked:true}},y:{{...baseOpts.scales.y,stacked:true}}}}}}
-}});
+function getFilters() {{
+  return {{
+    group:   document.getElementById('fGroup').value,
+    channel: document.getElementById('fChannel').value,
+    dm:      document.getElementById('fDM').value,
+    days:    parseInt(document.getElementById('fDays').value)
+  }};
+}}
 
-// Chart 3: Volumen diario Global
-new Chart(document.getElementById('chartVolGL'),{{
-  type:'bar',
-  data:{{
-    labels:daysGL,
-    datasets:[
-      {{label:'Adherentes',data:adhGL,backgroundColor:GREEN,borderRadius:3}},
-      {{label:'GAP',data:nGL.map((n,i)=>n-adhGL[i]),backgroundColor:'#E8D0C4',borderRadius:3}}
-    ]
+function filterTickets(f) {{
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - f.days);
+  const cutStr = cutoff.toISOString().slice(0,10);
+  return ALL_TICKETS.filter(t => {{
+    if (t.adherent === null) return false; // va_only
+    if (t.date < cutStr) return false;
+    if (f.group   !== 'all' && t.group   !== f.group)   return false;
+    if (f.channel !== 'all' && t.channel !== f.channel) return false;
+    if (f.dm      !== 'all' && t.dm      !== f.dm)      return false;
+    return true;
+  }});
+}}
+
+function dailyAgg(tickets) {{
+  const m = {{}};
+  tickets.forEach(t => {{
+    if (!m[t.date]) m[t.date] = {{n:0,adh:0}};
+    m[t.date].n++;
+    if (t.adherent) m[t.date].adh++;
+  }});
+  const days = Object.keys(m).sort();
+  return {{
+    days,
+    n:   days.map(d=>m[d].n),
+    adh: days.map(d=>m[d].adh),
+    pct: days.map(d=>m[d].n ? +(m[d].adh/m[d].n*100).toFixed(1) : 0)
+  }};
+}}
+
+function destroyChart(id) {{
+  if (charts[id]) {{ charts[id].destroy(); delete charts[id]; }}
+}}
+
+function makeChart(id, cfg) {{
+  destroyChart(id);
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}}
+
+const BASE = {{
+  responsive:true, maintainAspectRatio:false,
+  plugins:{{
+    legend:{{position:'bottom',labels:{{font:{{size:12}},boxWidth:12,padding:16}}}},
+    tooltip:{{cornerRadius:4,callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y ?? ctx.parsed}}`}}}}
   }},
-  options:{{...baseOpts,scales:{{x:{{...baseOpts.scales.x,stacked:true}},y:{{...baseOpts.scales.y,stacked:true}}}}}}
-}});
+  scales:{{
+    x:{{ticks:{{font:{{size:11}},maxRotation:45}},grid:{{display:false}}}},
+    y:{{grid:{{color:'#f0f0f0'}}}}
+  }}
+}};
+
+function refresh() {{
+  const f = getFilters();
+  const tickets = filterTickets(f);
+  const {{days, n, adh, pct}} = dailyAgg(tickets);
+
+  const total = tickets.length;
+  const adhN  = tickets.filter(t=>t.adherent).length;
+  const gap   = total - adhN;
+  const adhPct = total ? (adhN/total*100).toFixed(1) : '0.0';
+
+  // Trend: últimos 7 vs anteriores 7
+  const sorted = [...days].sort();
+  const last7 = sorted.slice(-7);
+  const prev7 = sorted.slice(-14,-7);
+  const pctLast = last7.length ? (tickets.filter(t=>last7.includes(t.date)&&t.adherent).length /
+    Math.max(1,tickets.filter(t=>last7.includes(t.date)).length)*100).toFixed(1) : null;
+  const pctPrev = prev7.length ? (tickets.filter(t=>prev7.includes(t.date)&&t.adherent).length /
+    Math.max(1,tickets.filter(t=>prev7.includes(t.date)).length)*100).toFixed(1) : null;
+  let trendTxt = '—';
+  if (pctLast !== null && pctPrev !== null) {{
+    const diff = (parseFloat(pctLast)-parseFloat(pctPrev)).toFixed(1);
+    trendTxt = diff > 0 ? `↑ +${{diff}}pp` : diff < 0 ? `↓ ${{diff}}pp` : `= 0pp`;
+  }}
+
+  document.getElementById('kpiTotal').textContent = total.toLocaleString();
+  document.getElementById('kpiAdh').textContent   = adhPct + '%';
+  document.getElementById('kpiGap').textContent   = gap.toLocaleString();
+  document.getElementById('kpiTrend').textContent = trendTxt;
+
+  // Colores del trend en KPI
+  const trendEl = document.getElementById('kpiTrend').parentElement;
+  trendEl.className = 'kpi ' + (trendTxt.startsWith('↑') ? 'green' : trendTxt.startsWith('↓') ? 'red' : 'clay');
+
+  const adhEl = document.getElementById('kpiAdh').parentElement;
+  adhEl.className = 'kpi ' + (parseFloat(adhPct)>=30?'green':parseFloat(adhPct)>=10?'':'red');
+
+  // Chart 1: % diario
+  makeChart('chartPct', {{
+    type:'line',
+    data:{{labels:days, datasets:[{{
+      label:'% Adherencia',
+      data:pct,
+      borderColor:'#CC785C',
+      backgroundColor:'rgba(204,120,92,.12)',
+      pointRadius:5, pointHoverRadius:7,
+      tension:.3, fill:true,
+      pointBackgroundColor: pct.map(v=>v>0?'#5A8A6A':'#CC785C')
+    }}]}},
+    options:{{...BASE,
+      plugins:{{...BASE.plugins,
+        annotation:{{annotations:{{line1:{{type:'line',yMin:0,yMax:0,borderColor:'#ddd',borderWidth:1}}}}}},
+        tooltip:{{callbacks:{{label:ctx=>`Adherencia: ${{ctx.parsed.y}}% (${{adh[ctx.dataIndex]}} de ${{n[ctx.dataIndex]}} tickets)` }}}}
+      }},
+      scales:{{...BASE.scales, y:{{...BASE.scales.y,min:0,max:Math.max(100,Math.max(...pct)+10),
+        ticks:{{callback:v=>v+'%'}}}}}}
+    }}
+  }});
+
+  // Chart 2: Volumen stacked
+  makeChart('chartVol', {{
+    type:'bar',
+    data:{{labels:days, datasets:[
+      {{label:'Adherentes ✓', data:adh, backgroundColor:'#5A8A6A', borderRadius:3}},
+      {{label:'GAP (sin acción)', data:n.map((x,i)=>x-adh[i]), backgroundColor:'#E8C4B4', borderRadius:3}}
+    ]}},
+    options:{{...BASE,
+      scales:{{x:{{...BASE.scales.x,stacked:true}},y:{{...BASE.scales.y,stacked:true,
+        ticks:{{callback:v=>v+' tix'}}}}}}
+    }}
+  }});
+
+  // Chart 3: Señales
+  const nMacro   = tickets.filter(t=>t.has_macro).length;
+  const nRfc     = tickets.filter(t=>t.has_rfc).length;
+  const nTrigger = tickets.filter(t=>t.has_trigger).length;
+  const nNone    = tickets.filter(t=>!t.has_macro&&!t.has_rfc&&!t.has_trigger).length;
+  makeChart('chartSignal', {{
+    type:'doughnut',
+    data:{{
+      labels:['Macro/Quicktext','RFC correcto','Trigger automático','Sin señal (GAP)'],
+      datasets:[{{
+        data:[nMacro,nRfc,nTrigger,nNone],
+        backgroundColor:['#5A8A6A','#6A8CAA','#C07820','#E8C4B4'],
+        borderWidth:2, borderColor:'#fff'
+      }}]
+    }},
+    options:{{responsive:true,maintainAspectRatio:false,
+      plugins:{{
+        legend:{{position:'right',labels:{{font:{{size:12}},boxWidth:14,padding:14}}}},
+        tooltip:{{callbacks:{{label:ctx=>` ${{ctx.label}}: ${{ctx.parsed}} tickets (${{total?+(ctx.parsed/total*100).toFixed(1):0}}%)`}}}}
+      }}
+    }}
+  }});
+
+  // Chart 4: Por canal
+  const channels = ['voice_direct','voice_rep','email','messaging','other'];
+  const isEN = document.body.classList.contains('en');
+  const chLabels = channels.map(c=>(isEN?CH_LABEL_EN:CH_LABEL_ES)[c]||c);
+  const chTotals = channels.map(c=>tickets.filter(t=>t.channel===c).length);
+  const chAdh    = channels.map(c=>tickets.filter(t=>t.channel===c&&t.adherent).length);
+  const chPct    = chTotals.map((n,i)=>n?+(chAdh[i]/n*100).toFixed(1):0);
+  makeChart('chartCh', {{
+    type:'bar',
+    data:{{labels:chLabels, datasets:[
+      {{label:'Adherentes ✓', data:chAdh, backgroundColor:'#5A8A6A',borderRadius:3}},
+      {{label:'GAP', data:chTotals.map((n,i)=>n-chAdh[i]), backgroundColor:'#E8C4B4',borderRadius:3}}
+    ]}},
+    options:{{...BASE,
+      scales:{{
+        x:{{...BASE.scales.x,stacked:true,ticks:{{font:{{size:12}},maxRotation:0}}}},
+        y:{{...BASE.scales.y,stacked:true}}
+      }},
+      plugins:{{...BASE.plugins,
+        tooltip:{{callbacks:{{
+          afterBody: ctx=>{{
+            const i=ctx[0].dataIndex;
+            return [`Adherencia: ${{chPct[i]}}% (${{chAdh[i]}}/${{chTotals[i]}})`];
+          }}
+        }}}}
+      }}
+    }}
+  }});
+
+  // Tabla detalle
+  const dms = ['bank_deposit','office_pick-up','mobile_payment','home_delivery'];
+  const chs = ['voice_direct','voice_rep','email','messaging','other'];
+  const rows = [];
+  dms.forEach(dm=>chs.forEach(ch=>{{
+    const bucket = tickets.filter(t=>t.dm===dm&&t.channel===ch);
+    if (!bucket.length) return;
+    const a = bucket.filter(t=>t.adherent).length;
+    const p = +(a/bucket.length*100).toFixed(1);
+    rows.push({{dm,ch,n:bucket.length,a,p}});
+  }}));
+  rows.sort((a,b)=>b.n-a.n);
+
+  const tbody = document.getElementById('detailBody');
+  tbody.innerHTML = rows.map(r=>{{
+    const bc = r.p>=30?'b-grn':r.p>=10?'b-mid':'b-red';
+    const dmLbl = DM_LABEL[r.dm]||r.dm;
+    const chLbl = (isEN?CH_LABEL_EN:CH_LABEL_ES)[r.ch]||r.ch;
+    return `<tr>
+      <td><strong>${{dmLbl}}</strong></td>
+      <td>${{chLbl}}</td>
+      <td>${{r.n}}</td>
+      <td>${{r.a}}</td>
+      <td>${{r.n-r.a}}</td>
+      <td><span class="badge ${{bc}}">${{r.p}}%</span></td>
+    </tr>`;
+  }}).join('') || '<tr><td colspan="6" class="no-data">Sin datos para los filtros seleccionados</td></tr>';
+}}
+
+// Init
+refresh();
 </script>
 </body>
 </html>"""
