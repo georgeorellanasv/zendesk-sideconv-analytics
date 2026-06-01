@@ -49,6 +49,7 @@ NAV = """
   <a href="daily_adherence.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>Dashboard Diario</span><span data-en>Daily Dashboard</span></a>
   <a href="f1_drilldown.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>F1 Detalle</span><span data-en>F1 Detail</span></a>
   <a href="contact_reasons.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid #CC785C;background:#CC785C;color:#fff"><span data-es>Motivos de Contacto</span><span data-en>Contact Reasons</span></a>
+  <a href="adoption_tracker.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>★ Adopción (BD·Voz)</span><span data-en>★ Adoption (BD·Voice)</span></a>
 </div>
 """
 

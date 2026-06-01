@@ -257,6 +257,7 @@ html = f"""<!DOCTYPE html>
   <a href="daily_adherence.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>Dashboard Diario</span><span data-en>Daily Dashboard</span></a>
   <a href="f1_drilldown.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>F1 Detalle</span><span data-en>F1 Detail</span></a>
   <a href="contact_reasons.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>Motivos de Contacto</span><span data-en>Contact Reasons</span></a>
+  <a href="adoption_tracker.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>★ Adopción (BD·Voz)</span><span data-en>★ Adoption (BD·Voice)</span></a>
 </div>
 
 <div class="page">
@@ -586,5 +587,7 @@ new Chart(document.getElementById('chartF1'), {{
 
 out = Path("reports/adherence_report.html")
 out.write_text(html, encoding="utf-8")
+# index.html para que el nav (que apunta a index.html) funcione tambien en local
+Path("reports/index.html").write_text(html, encoding="utf-8")
 size_kb = out.stat().st_size / 1024
-print(f"Reporte guardado: {out}  ({size_kb:.0f} KB)")
+print(f"Reporte guardado: {out} + reports/index.html  ({size_kb:.0f} KB)")

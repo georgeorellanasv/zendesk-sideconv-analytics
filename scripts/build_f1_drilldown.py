@@ -547,6 +547,9 @@ def build_html(stats: dict) -> str:
   <a href="contact_reasons.html">
     <span data-es>Motivos de Contacto</span><span data-en>Contact Reasons</span>
   </a>
+  <a href="adoption_tracker.html">
+    <span data-es>★ Adopción (BD·Voz)</span><span data-en>★ Adoption (BD·Voice)</span>
+  </a>
 </nav>
 
 <div class="page">
