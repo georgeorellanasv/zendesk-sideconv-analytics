@@ -251,6 +251,14 @@ html = f"""<!DOCTYPE html>
   </div>
 </div>
 
+<div style="background:#EBE5D7;padding:11px 24px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;border-bottom:1px solid rgba(20,20,19,.10)">
+  <a href="index.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid #CC785C;background:#CC785C;color:#fff"><span data-es>Reporte F1–F5</span><span data-en>F1–F5 Report</span></a>
+  <a href="context.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>Contexto y Metodología</span><span data-en>Context & Methodology</span></a>
+  <a href="daily_adherence.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>Dashboard Diario</span><span data-en>Daily Dashboard</span></a>
+  <a href="f1_drilldown.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>F1 Detalle</span><span data-en>F1 Detail</span></a>
+  <a href="contact_reasons.html" style="display:inline-block;padding:7px 15px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(20,20,19,.12);background:#fff;color:#1F1D1B"><span data-es>Motivos de Contacto</span><span data-en>Contact Reasons</span></a>
+</div>
+
 <div class="page">
 
 <!-- KPIs -->

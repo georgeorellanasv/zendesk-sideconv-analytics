@@ -118,12 +118,11 @@ body.en [data-en]{display:unset}
 <div class="page">
 
 <div class="nav-links">
-  <a href="context.html" class="nav-link active" data-es>Contexto y Metodología</a>
-  <a href="context.html" class="nav-link active" data-en>Context & Methodology</a>
-  <a href="daily_adherence.html" class="nav-link" data-es>Dashboard Adherencia Diaria</a>
-  <a href="daily_adherence.html" class="nav-link" data-en>Daily Adherence Dashboard</a>
-  <a href="index.html" class="nav-link" data-es>Reporte Completo F1-F5</a>
-  <a href="index.html" class="nav-link" data-en>Full F1-F5 Report</a>
+  <a href="index.html" class="nav-link"><span data-es>Reporte F1–F5</span><span data-en>F1–F5 Report</span></a>
+  <a href="context.html" class="nav-link active"><span data-es>Contexto y Metodología</span><span data-en>Context & Methodology</span></a>
+  <a href="daily_adherence.html" class="nav-link"><span data-es>Dashboard Diario</span><span data-en>Daily Dashboard</span></a>
+  <a href="f1_drilldown.html" class="nav-link"><span data-es>F1 Detalle</span><span data-en>F1 Detail</span></a>
+  <a href="contact_reasons.html" class="nav-link"><span data-es>Motivos de Contacto</span><span data-en>Contact Reasons</span></a>
 </div>
 
 <!-- 1. POR QUÉ -->

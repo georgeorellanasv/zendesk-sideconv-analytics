@@ -532,17 +532,20 @@ def build_html(stats: dict) -> str:
 
 <!-- ── NAV ── -->
 <nav class="nav-bar">
+  <a href="index.html">
+    <span data-es>Reporte F1–F5</span><span data-en>F1–F5 Report</span>
+  </a>
   <a href="context.html">
-    <span data-es>Contexto</span><span data-en>Context</span>
+    <span data-es>Contexto y Metodología</span><span data-en>Context & Methodology</span>
   </a>
   <a href="daily_adherence.html">
-    <span data-es>Tendencia Diaria</span><span data-en>Daily Trend</span>
-  </a>
-  <a href="adherence_report.html">
-    <span data-es>Reporte Principal</span><span data-en>Main Report</span>
+    <span data-es>Dashboard Diario</span><span data-en>Daily Dashboard</span>
   </a>
   <a href="f1_drilldown.html" class="active">
-    <span data-es>F1 Drill-Down</span><span data-en>F1 Drill-Down</span>
+    <span data-es>F1 Detalle</span><span data-en>F1 Detail</span>
+  </a>
+  <a href="contact_reasons.html">
+    <span data-es>Motivos de Contacto</span><span data-en>Contact Reasons</span>
   </a>
 </nav>
 
